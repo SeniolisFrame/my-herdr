@@ -296,6 +296,9 @@ func clampView(cur, off, n, h int) (int, int) {
 }
 
 func (m *model) handleKey(k string) tea.Cmd {
+	if latin, ok := thaiKeys[k]; ok {
+		k = latin
+	}
 	half := max(1, m.contentHeight()/2)
 	switch k {
 	case "ctrl+c", "q":

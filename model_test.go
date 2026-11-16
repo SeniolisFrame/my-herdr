@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func filepathIsAbs(p string) bool { return filepath.IsAbs(filepath.FromSlash(p)) }
@@ -47,6 +49,13 @@ func TestMention(t *testing.T) {
 	// Target pane elsewhere: absolute path.
 	if got := mention(root, "a.go", t.TempDir()); got[0] != '@' || !filepathIsAbs(got[1:len(got)-1]) {
 		t.Errorf("want absolute mention, got %q", got)
+	}
+}
+
+func TestThaiKeys(t *testing.T) {
+	m := newModel(t.TempDir(), false, "none")
+	if cmd := m.handleKey("ๆ"); cmd == nil || cmd() != tea.Quit() {
+		t.Error("ๆ (q on the Thai layout) should quit")
 	}
 }
 
