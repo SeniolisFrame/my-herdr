@@ -1,0 +1,40 @@
+id = "herdr-explorer"
+name = "Explorer"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "File tree with file-type icons, git branch, and a collapsible per-file git diff viewer"
+platforms = ["linux", "macos", "windows"]
+
+# Runs on `herdr plugin install`. For `herdr plugin link` build it yourself:
+#   go build -o bin/herdr-explorer.exe .
+[[build]]
+command = ["go", "build", "-o", "bin/herdr-explorer.exe", "."]
+
+# File tree beside the current pane (Tab switches to the diff view inside).
+[[panes]]
+id = "files"
+title = "Files"
+placement = "split"
+command = ["bin/herdr-explorer.exe", "--view", "files"]
+
+# Big popup that opens straight on the diff view.
+[[panes]]
+id = "diff"
+title = "Changes"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ["bin/herdr-explorer.exe", "--view", "diff"]
+
+# Actions exist so the panes can be bound to keys (keybindings target actions).
+[[actions]]
+id = "open-files"
+title = "Explorer: open file tree"
+contexts = ["workspace"]
+command = ["bin/herdr-explorer.exe", "open", "files"]
+
+[[actions]]
+id = "open-diff"
+title = "Explorer: open changes"
+contexts = ["workspace"]
+command = ["bin/herdr-explorer.exe", "open", "diff"]
