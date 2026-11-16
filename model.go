@@ -20,6 +20,9 @@ const (
 
 const refreshEvery = 2 * time.Second
 
+// headerRows: tab bar + branch bar above the content.
+const headerRows = 2
+
 // autoCollapseLines: files with bigger diffs (lockfiles...) start collapsed.
 const autoCollapseLines = 400
 
@@ -29,9 +32,9 @@ type drow struct {
 }
 
 type model struct {
-	root  string
-	isGit bool
-	iconSet string // emoji | nerd | none
+	root    string
+	isGit   bool
+	iconSet string // emoji | none
 	view    viewKind
 
 	width, height int
@@ -56,6 +59,8 @@ type model struct {
 	loading bool
 	err     string
 
+	pendingJump string // file to open in the Changes view when its diff arrives
+
 	ctx     launchContext
 	flash   string
 	flashAt time.Time
@@ -74,6 +79,7 @@ type dataMsg struct {
 	status        map[string]string
 	diffs         []*fileDiff
 	err           error
+	withDiff      bool
 }
 
 type tickMsg struct{}
@@ -99,28 +105,39 @@ func newModel(root string, startDiff bool, iconSet string) *model {
 
 func (m *model) Init() tea.Cmd {
 	m.loading = true
-	return tea.Batch(m.loadCmd(), tick())
+	return tea.Batch(m.loadCmd(m.view == viewDiff), tick())
 }
 
 func tick() tea.Cmd {
 	return tea.Tick(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-func (m *model) loadCmd() tea.Cmd {
+// loadCmd always reads branch + status (cheap); the full diff only when
+// withDiff, because every tab runs its own explorer on a 2s timer.
+func (m *model) loadCmd(withDiff bool) tea.Cmd {
 	root, isGit := m.root, m.isGit
 	return func() tea.Msg {
 		if !isGit {
 			return dataMsg{status: map[string]string{}}
 		}
-		d := dataMsg{branch: gitBranch(root), status: gitStatus(root)}
+		d := dataMsg{branch: gitBranch(root), status: gitStatus(root), withDiff: withDiff}
 		d.ahead, d.behind, d.hasUpstream = gitAheadBehind(root)
-		d.diffs, d.err = loadDiffs(root)
+		if withDiff {
+			d.diffs, d.err = loadDiffs(root)
+		}
 		return d
 	}
 }
 
+// showDiff switches to the Changes view and loads a fresh diff for it.
+func (m *model) showDiff() tea.Cmd {
+	m.view = viewDiff
+	m.loading = true
+	return m.loadCmd(true)
+}
+
 func (m *model) contentHeight() int {
-	return max(1, m.height-2)
+	return max(1, m.height-headerRows-1)
 }
 
 // ---------- update ----------
@@ -135,7 +152,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{tick()}
 		if !m.loading {
 			m.loading = true
-			cmds = append(cmds, m.loadCmd())
+			cmds = append(cmds, m.loadCmd(m.view == viewDiff))
 		}
 		return m, tea.Batch(cmds...)
 	case dataMsg:
@@ -216,10 +233,26 @@ func (m *model) applyData(d dataMsg) {
 		r := m.drows[m.dcur]
 		curPath, curLine = m.diffs[r.file].path, r.line
 	}
+	if !d.withDiff {
+		return
+	}
 	if d.err == nil {
 		m.diffs = d.diffs
 	}
 	m.rebuildDiffRows()
+	if rel := m.pendingJump; rel != "" {
+		m.pendingJump = ""
+		for i, f := range m.diffs {
+			if f.path == rel {
+				m.collapsed[f.path] = false
+				m.rebuildDiffRows()
+				m.dcur = m.headerRow(i)
+				m.doff = m.dcur
+				m.clamp()
+				return
+			}
+		}
+	}
 	if curPath != "" {
 		header := -1
 		for i, r := range m.drows {
@@ -291,17 +324,15 @@ func (m *model) handleKey(k string) tea.Cmd {
 		return tea.Quit
 	case "tab":
 		if m.view == viewFiles {
-			m.view = viewDiff
-		} else {
-			m.view = viewFiles
+			return m.showDiff()
 		}
+		m.view = viewFiles
 		return nil
 	case "1":
 		m.view = viewFiles
 		return nil
 	case "2":
-		m.view = viewDiff
-		return nil
+		return m.showDiff()
 	case "s":
 		return m.sendCmd(m.currentRel())
 	case "esc", "c":
@@ -315,7 +346,7 @@ func (m *model) handleKey(k string) tea.Cmd {
 		m.refreshTree()
 		if !m.loading {
 			m.loading = true
-			return m.loadCmd()
+			return m.loadCmd(m.view == viewDiff)
 		}
 		return nil
 	}
@@ -342,7 +373,7 @@ func (m *model) handleKey(k string) tea.Cmd {
 			if cur != nil && cur.isDir {
 				m.toggleDir(cur)
 			} else if cur != nil {
-				m.jumpToDiff(cur.rel)
+				return m.jumpToDiff(cur.rel)
 			}
 		case "right", "l":
 			if cur != nil && cur.isDir && !cur.open {
@@ -360,7 +391,7 @@ func (m *model) handleKey(k string) tea.Cmd {
 			}
 		case "d":
 			if cur != nil {
-				m.jumpToDiff(cur.rel)
+				return m.jumpToDiff(cur.rel)
 			}
 		}
 		m.clamp()
@@ -445,18 +476,13 @@ func (m *model) headerRow(fi int) int {
 	return 0
 }
 
-func (m *model) jumpToDiff(rel string) {
-	for i, f := range m.diffs {
-		if f.path == rel {
-			m.collapsed[f.path] = false
-			m.rebuildDiffRows()
-			m.view = viewDiff
-			m.dcur = m.headerRow(i)
-			m.doff = m.dcur
-			m.clamp()
-			return
-		}
+// jumpToDiff opens the Changes view on rel once the fresh diff arrives.
+func (m *model) jumpToDiff(rel string) tea.Cmd {
+	if _, changed := m.status[rel]; !changed {
+		return nil
 	}
+	m.pendingJump = rel
+	return m.showDiff()
 }
 
 func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
@@ -466,7 +492,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	switch msg.Button {
 	case tea.MouseButtonRight:
 		// Right-click a row: send that file to the chat pane.
-		row := msg.Y - 1
+		row := msg.Y - headerRows
 		if row < 0 || row >= m.contentHeight() {
 			return nil
 		}
@@ -492,14 +518,13 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.clamp()
 	case tea.MouseButtonLeft:
 		if msg.Y == 0 {
-			if msg.X < m.tabSplitX() {
-				m.view = viewFiles
-			} else {
-				m.view = viewDiff
+			if msg.X >= m.tabSplitX() {
+				return m.showDiff()
 			}
+			m.view = viewFiles
 			return nil
 		}
-		row := msg.Y - 1
+		row := msg.Y - headerRows
 		if row >= m.contentHeight() {
 			return nil
 		}
@@ -539,7 +564,7 @@ var (
 	sTabOn   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0d1117")).Background(cAccent).Padding(0, 1)
 	sTabOff  = lipgloss.NewStyle().Foreground(cDim).Padding(0, 1)
 	sErr     = lipgloss.NewStyle().Foreground(cDel)
-	sBranch  = lipgloss.NewStyle().Foreground(cBranch).Bold(true)
+	sBranch  = lipgloss.NewStyle().Foreground(lipgloss.Color("#0d1117")).Background(cBranch).Bold(true).Padding(0, 1)
 	sSelName = lipgloss.NewStyle().Reverse(true)
 	sGuide   = lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261"))
 )
@@ -558,14 +583,11 @@ func statusColor(code string) lipgloss.Color {
 }
 
 func (m *model) tabLabels() (string, string) {
-	files, changes := " Files", " Changes"
-	switch m.iconSet {
-	case "emoji":
+	files, changes := "Files", "Changes"
+	if m.iconSet == "emoji" {
 		files, changes = "📁 Files", "🔀 Changes"
-	case "none":
-		files, changes = "Files", "Changes"
 	}
-	if n := len(m.diffs); n > 0 {
+	if n := len(m.status); n > 0 {
 		changes += fmt.Sprintf(" %d", n)
 	}
 	if m.view == viewFiles {
@@ -581,29 +603,27 @@ func (m *model) tabSplitX() int {
 
 func (m *model) tabBar() string {
 	a, b := m.tabLabels()
-	left := a + b
-	right := sDim.Render(filepath.Base(m.root))
-	if m.branch != "" {
-		br := m.branch
-		switch m.iconSet {
-		case "nerd":
-			br = branchGlyph + " " + br
-		case "emoji":
-			br = "🌿 " + br
+	return a + b
+}
+
+// branchBar is its own row so the branch stays readable in a narrow pane.
+func (m *model) branchBar() string {
+	repo := sDim.Render(" " + filepath.Base(m.root))
+	if m.branch == "" {
+		if !m.isGit {
+			return sDim.Render(" (no git)") + repo
 		}
-		right += "  " + sBranch.Render(br)
-		if m.hasUpstream && (m.ahead > 0 || m.behind > 0) {
-			right += " " + sDim.Render(fmt.Sprintf("↑%d ↓%d", m.ahead, m.behind))
-		}
-	} else if !m.isGit {
-		right += "  " + sDim.Render("(no git)")
+		return repo
 	}
-	right += " "
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		return left + " " + right
+	br := m.branch
+	if m.iconSet == "emoji" {
+		br = "🌿 " + br
 	}
-	return left + strings.Repeat(" ", gap) + right
+	s := sBranch.Render(br)
+	if m.hasUpstream && (m.ahead > 0 || m.behind > 0) {
+		s += " " + sDim.Render(fmt.Sprintf("↑%d ↓%d", m.ahead, m.behind))
+	}
+	return s + repo
 }
 
 func (m *model) footer() string {
@@ -637,7 +657,7 @@ func (m *model) View() string {
 		lines = append(lines, "")
 	}
 	out := make([]string, 0, h+2)
-	out = append(out, m.tabBar())
+	out = append(out, m.tabBar(), m.branchBar())
 	out = append(out, lines...)
 	out = append(out, m.footer())
 	for i, l := range out {
@@ -653,28 +673,18 @@ func cursorMark(sel bool) string {
 	return " "
 }
 
-func (m *model) iconText(ic icon) string {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(ic.color)).Render(ic.glyph) + " "
-}
-
 func (m *model) fileIconStr(name string) string {
-	switch m.iconSet {
-	case "nerd":
-		return m.iconText(fileIcon(name))
-	case "emoji":
-		return emojiFile(name) + " "
+	if m.iconSet != "emoji" {
+		return ""
 	}
-	return ""
+	return emojiFile(name) + " "
 }
 
 func (m *model) dirIconStr(name string, open bool) string {
-	switch m.iconSet {
-	case "nerd":
-		return m.iconText(dirIcon(name, open))
-	case "emoji":
-		return emojiDir(name, open) + " "
+	if m.iconSet != "emoji" {
+		return ""
 	}
-	return ""
+	return emojiDir(name, open) + " "
 }
 
 // indentGuides draws "│ " for each ancestor level, like an editor sidebar.

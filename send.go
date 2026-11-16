@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 // Sending a file to the chat: terminals can't drag & drop between panes, so
@@ -122,6 +123,10 @@ func mention(root, rel, targetCwd string) string {
 
 // sendToChat types "@path " into the target pane and returns a status line.
 func sendToChat(ctx launchContext, root, rel string) (string, error) {
+	// A newline in a file name would act as Enter in the target pane.
+	if strings.IndexFunc(rel, unicode.IsControl) >= 0 {
+		return "", fmt.Errorf("file name contains control characters, not sending")
+	}
 	if os.Getenv("HERDR_ENV") == "" && os.Getenv("HERDR_SOCKET_PATH") == "" {
 		return "", fmt.Errorf("not running inside herdr")
 	}

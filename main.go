@@ -28,18 +28,10 @@ func main() {
 
 	viewFlag := flag.String("view", "files", "initial view: files or diff")
 	rootFlag := flag.String("root", "", "directory to show (default: taken from the herdr context)")
-	iconsFlag := flag.String("icons", envOr("HERDR_EXPLORER_ICONS", "emoji"), "icon set: emoji, nerd (needs a Nerd Font) or none")
-	printCtx := flag.Bool("print-context", false, "print the herdr context and the resolved root, then exit")
+	iconsFlag := flag.String("icons", envOr("HERDR_EXPLORER_ICONS", "emoji"), "icon set: emoji or none")
 	flag.Parse()
 
-	root := resolveRoot(*rootFlag)
-	if *printCtx {
-		fmt.Println("HERDR_PLUGIN_CONTEXT_JSON =", os.Getenv("HERDR_PLUGIN_CONTEXT_JSON"))
-		fmt.Println("resolved root =", root)
-		return
-	}
-
-	m := newModel(root, *viewFlag == "diff", *iconsFlag)
+	m := newModel(resolveRoot(*rootFlag), *viewFlag == "diff", *iconsFlag)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

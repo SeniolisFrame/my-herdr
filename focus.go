@@ -7,7 +7,7 @@ import (
 )
 
 // toggleFocus is the "toggle" action (bound to one key in config.toml):
-// in the file tree → jump to the chat pane on its right;
+// in the file tree → jump to the chat pane on its left;
 // anywhere else → jump to this tab's file tree (opening it if missing).
 func toggleFocus() int {
 	ctx := readLaunchContext()
@@ -27,7 +27,7 @@ func toggleFocus() int {
 		return 1
 	}
 	if cur.Label == "Files" {
-		return run(herdrBin(), "pane", "focus", "--pane", cur.PaneID, "--direction", "right")
+		return run(herdrBin(), "pane", "focus", "--pane", cur.PaneID, "--direction", "left")
 	}
 	files := findFilesPane(cur.TabID)
 	if files == "" {
@@ -54,13 +54,13 @@ func findFilesPane(tab string) string {
 	return ""
 }
 
-// focusChat moves focus from the explorer pane itself to its right neighbour.
+// focusChat moves focus from the explorer pane itself to its left neighbour (the chat).
 func focusChat() error {
 	self := os.Getenv("HERDR_PANE_ID")
 	if self == "" {
 		return fmt.Errorf("not running in a herdr pane")
 	}
-	return exec.Command(herdrBin(), "pane", "focus", "--pane", self, "--direction", "right").Run()
+	return exec.Command(herdrBin(), "pane", "focus", "--pane", self, "--direction", "left").Run()
 }
 
 func run(name string, args ...string) int {

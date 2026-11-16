@@ -1,4 +1,4 @@
-# my-herdr
+﻿# my-herdr
 
 herdr plugin (`herdr-explorer`): file tree with file-type icons and git status,
 current git branch, a per-file collapsible git diff viewer, and sending files
@@ -15,12 +15,14 @@ herdr plugin link <path-to-this-folder>
 
 | Key | Action |
 | --- | --- |
-| `prefix+f` / `prefix+d` | open file tree / changes popup (config.toml bindings) |
-| `tab` | switch Files ↔ Changes |
-| `⏎` | open folder / fold file diff |
+| `alt+e` / `prefix+f` | switch focus chat ↔ file tree (opens it if missing) |
+| `prefix+d` | changes popup |
+| `esc` | back to the chat |
+| `tab` | switch Files â†” Changes |
+| `âŽ` | open folder / fold file diff |
 | `s`, right-click | type `@path ` into the neighbouring chat pane |
 | `a` | fold/unfold all diffs |
 | `n` / `p` | next / previous file in diff |
 | `q` | quit |
 
-Icons need a Nerd Font; use `--icons none` otherwise.
+Icons are emoji (no special font needed); `--icons none` turns them off.

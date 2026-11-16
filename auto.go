@@ -177,9 +177,8 @@ func ensureFilesPane(ws, tab string) {
 		return
 	}
 	id := resp.Result.PluginPane.Pane.PaneID
-	// Move it to the left and make it narrow, like an editor sidebar.
-	_ = exec.Command(herdrBin(), "pane", "swap", "--pane", id, "--direction", "left").Run()
-	_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "left", "--amount", envOr("HERDR_EXPLORER_SHRINK", "0.25")).Run()
-	// Swap/resize focus the sidebar; give focus back to the main pane.
-	_ = exec.Command(herdrBin(), "pane", "focus", "--pane", id, "--direction", "right").Run()
+	// Narrow sidebar on the right of the chat (split 75/25).
+	_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "right", "--amount", "0.25").Run()
+	// Resize focuses the sidebar; give focus back to the chat.
+	_ = exec.Command(herdrBin(), "pane", "focus", "--pane", id, "--direction", "left").Run()
 }

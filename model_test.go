@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,11 @@ func TestMention(t *testing.T) {
 			t.Errorf("mention(%q) = %q, want %q", c.rel, got, c.want)
 		}
 	}
+	for _, bad := range []string{"a\nrm -rf ~", "a\rb", "a\x1bb"} {
+		if _, err := sendToChat(launchContext{}, root, bad); err == nil || !strings.Contains(err.Error(), "control") {
+			t.Errorf("sendToChat(%q) must refuse control characters, got %v", bad, err)
+		}
+	}
 	// Target pane elsewhere: absolute path.
 	if got := mention(root, "a.go", t.TempDir()); got[0] != '@' || !filepathIsAbs(got[1:len(got)-1]) {
 		t.Errorf("want absolute mention, got %q", got)
@@ -51,7 +57,7 @@ func TestSnapshot(t *testing.T) {
 		t.Skip("set EXPLORER_DEMO_ROOT")
 	}
 	m := newModel(resolveRoot(root), false, envOr("EXPLORER_ICONS", "emoji"))
-	m.Update(m.loadCmd()())
+	m.Update(m.loadCmd(true)())
 	m.width, m.height = 90, 24
 	for _, n := range m.trows {
 		if n.isDir {
@@ -60,7 +66,15 @@ func TestSnapshot(t *testing.T) {
 	}
 	m.trows = flatten(m.tree, nil)
 	t.Log("\n" + m.View())
-	m.view = viewDiff
-	m.toggleFile(1)
+	// Enter on a changed file: diff loads, then the view jumps to that file.
+	m.view = viewFiles
+	cmd := m.jumpToDiff("main.go")
+	if cmd == nil || m.view != viewDiff {
+		t.Fatal("jumpToDiff did not switch to the diff view")
+	}
+	m.Update(cmd())
+	if r := m.drows[m.dcur]; r.line != -1 || m.diffs[r.file].path != "main.go" {
+		t.Fatalf("cursor not on main.go header: %+v", r)
+	}
 	t.Log("\n" + m.View())
 }
