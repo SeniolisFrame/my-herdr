@@ -19,10 +19,16 @@ func main() {
 	if len(os.Args) > 2 && os.Args[1] == "open" {
 		os.Exit(openPane(os.Args[2]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "auto" {
+		os.Exit(autoOpen())
+	}
+	if len(os.Args) > 1 && os.Args[1] == "toggle" {
+		os.Exit(toggleFocus())
+	}
 
 	viewFlag := flag.String("view", "files", "initial view: files or diff")
 	rootFlag := flag.String("root", "", "directory to show (default: taken from the herdr context)")
-	iconsFlag := flag.String("icons", envOr("HERDR_EXPLORER_ICONS", "nerd"), "icon set: nerd or none")
+	iconsFlag := flag.String("icons", envOr("HERDR_EXPLORER_ICONS", "emoji"), "icon set: emoji, nerd (needs a Nerd Font) or none")
 	printCtx := flag.Bool("print-context", false, "print the herdr context and the resolved root, then exit")
 	flag.Parse()
 
@@ -33,7 +39,7 @@ func main() {
 		return
 	}
 
-	m := newModel(root, *viewFlag == "diff", *iconsFlag != "none")
+	m := newModel(root, *viewFlag == "diff", *iconsFlag)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

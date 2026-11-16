@@ -15,6 +15,8 @@ import (
 
 type paneInfo struct {
 	PaneID      string `json:"pane_id"`
+	Label       string `json:"label"`
+	Focused     bool   `json:"focused"`
 	Cwd         string `json:"cwd"`
 	AgentStatus string `json:"agent_status"`
 	TabID       string `json:"tab_id"`
@@ -67,9 +69,12 @@ func pickTarget(ctx launchContext) (paneInfo, error) {
 			others = append(others, p)
 		}
 	}
-	for _, p := range others {
-		if p.PaneID == ctx.FocusedPaneID {
-			return p, nil
+	// Auto-opened panes are told their chat pane explicitly.
+	for _, want := range []string{os.Getenv("HERDR_EXPLORER_TARGET"), ctx.FocusedPaneID} {
+		for _, p := range others {
+			if want != "" && p.PaneID == want {
+				return p, nil
+			}
 		}
 	}
 	score := func(p paneInfo) int {

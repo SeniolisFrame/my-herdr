@@ -50,7 +50,7 @@ func TestSnapshot(t *testing.T) {
 	if root == "" {
 		t.Skip("set EXPLORER_DEMO_ROOT")
 	}
-	m := newModel(resolveRoot(root), false, os.Getenv("EXPLORER_ICONS") != "none")
+	m := newModel(resolveRoot(root), false, envOr("EXPLORER_ICONS", "emoji"))
 	m.Update(m.loadCmd()())
 	m.width, m.height = 90, 24
 	for _, n := range m.trows {

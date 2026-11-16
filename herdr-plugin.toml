@@ -10,6 +10,20 @@ platforms = ["linux", "macos", "windows"]
 [[build]]
 command = ["go", "build", "-o", "bin/herdr-explorer.exe", "."]
 
+# Open the file tree automatically (left sidebar) on start and for every new
+# workspace/tab. Turn off: create an empty file named "no-auto" in
+# `herdr plugin config-dir herdr-explorer`.
+[[startup]]
+command = ["bin/herdr-explorer.exe", "auto"]
+
+[[events]]
+on = "workspace.created"
+command = ["bin/herdr-explorer.exe", "auto"]
+
+[[events]]
+on = "tab.created"
+command = ["bin/herdr-explorer.exe", "auto"]
+
 # File tree beside the current pane (Tab switches to the diff view inside).
 [[panes]]
 id = "files"
@@ -32,6 +46,12 @@ id = "open-files"
 title = "Explorer: open file tree"
 contexts = ["workspace"]
 command = ["bin/herdr-explorer.exe", "open", "files"]
+
+[[actions]]
+id = "toggle"
+title = "Explorer: switch focus between chat and file tree"
+contexts = ["workspace"]
+command = ["bin/herdr-explorer.exe", "toggle"]
 
 [[actions]]
 id = "open-diff"

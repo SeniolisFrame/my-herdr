@@ -31,8 +31,8 @@ type drow struct {
 type model struct {
 	root  string
 	isGit bool
-	icons bool
-	view  viewKind
+	iconSet string // emoji | nerd | none
+	view    viewKind
 
 	width, height int
 
@@ -78,11 +78,11 @@ type dataMsg struct {
 
 type tickMsg struct{}
 
-func newModel(root string, startDiff, icons bool) *model {
+func newModel(root string, startDiff bool, iconSet string) *model {
 	m := &model{
 		root:      root,
 		isGit:     gitTopLevel(root) != "",
-		icons:     icons,
+		iconSet:   iconSet,
 		collapsed: map[string]bool{},
 		status:    map[string]string{},
 		dirtyDirs: map[string]bool{},
@@ -304,6 +304,13 @@ func (m *model) handleKey(k string) tea.Cmd {
 		return nil
 	case "s":
 		return m.sendCmd(m.currentRel())
+	case "esc", "c":
+		return func() tea.Msg {
+			if err := focusChat(); err != nil {
+				return flashMsg{text: "focus chat: " + err.Error()}
+			}
+			return nil
+		}
 	case "r":
 		m.refreshTree()
 		if !m.loading {
@@ -534,6 +541,7 @@ var (
 	sErr     = lipgloss.NewStyle().Foreground(cDel)
 	sBranch  = lipgloss.NewStyle().Foreground(cBranch).Bold(true)
 	sSelName = lipgloss.NewStyle().Reverse(true)
+	sGuide   = lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261"))
 )
 
 func statusColor(code string) lipgloss.Color {
@@ -551,7 +559,10 @@ func statusColor(code string) lipgloss.Color {
 
 func (m *model) tabLabels() (string, string) {
 	files, changes := " Files", " Changes"
-	if !m.icons {
+	switch m.iconSet {
+	case "emoji":
+		files, changes = "📁 Files", "🔀 Changes"
+	case "none":
 		files, changes = "Files", "Changes"
 	}
 	if n := len(m.diffs); n > 0 {
@@ -574,8 +585,11 @@ func (m *model) tabBar() string {
 	right := sDim.Render(filepath.Base(m.root))
 	if m.branch != "" {
 		br := m.branch
-		if m.icons {
+		switch m.iconSet {
+		case "nerd":
 			br = branchGlyph + " " + br
+		case "emoji":
+			br = "🌿 " + br
 		}
 		right += "  " + sBranch.Render(br)
 		if m.hasUpstream && (m.ahead > 0 || m.behind > 0) {
@@ -603,9 +617,9 @@ func (m *model) footer() string {
 		return sErr.Render(m.err)
 	}
 	if m.view == viewFiles {
-		return sDim.Render("↑↓ move  ⏎ open/diff  s send to chat  h/l fold  tab changes  q quit")
+		return sDim.Render("⏎ open  s send  esc chat  h/l fold  tab changes  q quit")
 	}
-	return sDim.Render("↑↓ move  ⏎ fold  s send to chat  n/p next/prev  a fold all  tab files  q quit")
+	return sDim.Render("⏎ fold  s send  esc chat  n/p next/prev  a fold all  tab files  q quit")
 }
 
 func (m *model) View() string {
@@ -640,10 +654,35 @@ func cursorMark(sel bool) string {
 }
 
 func (m *model) iconText(ic icon) string {
-	if !m.icons {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(ic.color)).Render(ic.glyph) + " "
+}
+
+func (m *model) fileIconStr(name string) string {
+	switch m.iconSet {
+	case "nerd":
+		return m.iconText(fileIcon(name))
+	case "emoji":
+		return emojiFile(name) + " "
+	}
+	return ""
+}
+
+func (m *model) dirIconStr(name string, open bool) string {
+	switch m.iconSet {
+	case "nerd":
+		return m.iconText(dirIcon(name, open))
+	case "emoji":
+		return emojiDir(name, open) + " "
+	}
+	return ""
+}
+
+// indentGuides draws "│ " for each ancestor level, like an editor sidebar.
+func indentGuides(depth int) string {
+	if depth <= 0 {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(ic.color)).Render(ic.glyph) + " "
+	return sGuide.Render(strings.Repeat("│ ", depth))
 }
 
 func (m *model) treeLines(h int) []string {
@@ -660,7 +699,7 @@ func (m *model) treeLines(h int) []string {
 		sel := i == m.tcur
 		var b strings.Builder
 		b.WriteString(cursorMark(sel))
-		b.WriteString(strings.Repeat("  ", n.depth))
+		b.WriteString(indentGuides(n.depth))
 		nameStyle := lipgloss.NewStyle()
 		badge := ""
 		if n.isDir {
@@ -669,14 +708,14 @@ func (m *model) treeLines(h int) []string {
 				arrow = "▾ "
 			}
 			b.WriteString(sDim.Render(arrow))
-			b.WriteString(m.iconText(dirIcon(n.name, n.open)))
+			b.WriteString(m.dirIconStr(n.name, n.open))
 			if m.dirtyDirs[n.rel] {
 				nameStyle = nameStyle.Foreground(cMod)
 				badge = " " + lipgloss.NewStyle().Foreground(cMod).Render("●")
 			}
 		} else {
 			b.WriteString("  ")
-			b.WriteString(m.iconText(fileIcon(n.name)))
+			b.WriteString(m.fileIconStr(n.name))
 			if code, ok := m.status[n.rel]; ok {
 				c := statusColor(code)
 				nameStyle = nameStyle.Foreground(c)
@@ -743,7 +782,7 @@ func (m *model) fileHeader(f *fileDiff, sel bool) string {
 	}
 	s := sDim.Render(arrow) +
 		lipgloss.NewStyle().Foreground(c).Bold(true).Render(f.status) + " " +
-		m.iconText(fileIcon(filepath.Base(f.path))) +
+		m.fileIconStr(filepath.Base(f.path)) +
 		ns.Render(name)
 	if f.adds > 0 {
 		s += " " + sAdd.Render(fmt.Sprintf("+%d", f.adds))
