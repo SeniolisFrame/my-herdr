@@ -10,7 +10,7 @@ platforms = ["linux", "macos", "windows"]
 [[build]]
 command = ["go", "build", "-o", "bin/herdr-explorer.exe", "."]
 
-# Open the file tree automatically (sidebar right of the chat) on start and for every new
+# Open Files (left) and Changes (right) around the chat on start and for every new
 # workspace/tab. Turn off: create an empty file named "no-auto" in
 # `herdr plugin config-dir herdr-explorer`.
 [[startup]]
@@ -24,32 +24,15 @@ command = ["bin/herdr-explorer.exe", "auto"]
 on = "tab.created"
 command = ["bin/herdr-explorer.exe", "auto"]
 
-# File tree beside the current pane (Tab switches to the diff view inside).
+# Layout per tab:  Files | chat | Changes  (opened by the hooks above).
 [[panes]]
 id = "files"
 title = "Files"
 placement = "split"
 command = ["bin/herdr-explorer.exe", "--view", "files"]
 
-# Big popup that opens straight on the diff view.
 [[panes]]
-id = "diff"
+id = "changes"
 title = "Changes"
-placement = "popup"
-width = "90%"
-height = "90%"
+placement = "split"
 command = ["bin/herdr-explorer.exe", "--view", "diff"]
-
-# Actions exist so the panes can be bound to keys (keybindings target actions).
-# toggle also opens the file tree (right of the chat) when the tab has none.
-[[actions]]
-id = "toggle"
-title = "Explorer: switch focus between chat and file tree"
-contexts = ["workspace"]
-command = ["bin/herdr-explorer.exe", "toggle"]
-
-[[actions]]
-id = "open-diff"
-title = "Explorer: open changes"
-contexts = ["workspace"]
-command = ["bin/herdr-explorer.exe", "open", "diff"]

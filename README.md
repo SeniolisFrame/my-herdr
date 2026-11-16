@@ -11,18 +11,19 @@ go build -o bin/herdr-explorer.exe .
 herdr plugin link <path-to-this-folder>
 ```
 
-## Keys
+## Layout & keys
+
+Each tab opens as `Files | chat | Changes` automatically.
 
 | Key | Action |
 | --- | --- |
-| `alt+e` / `prefix+f` | switch focus chat ↔ file tree (opens it if missing) |
-| `prefix+d` | changes popup |
+| `alt+e` / `prefix+tab` | next pane (herdr `cycle_pane_next`, set in config.toml) |
+| `tab` (in Files/Changes) | next pane: Files → chat, Changes → Files |
 | `esc` | back to the chat |
-| `tab` | switch Files â†” Changes |
-| `âŽ` | open folder / fold file diff |
-| `s`, right-click | type `@path ` into the neighbouring chat pane |
+| `⏎` | open folder / fold file diff |
+| `s`, right-click | type `@path ` into the chat pane |
 | `a` | fold/unfold all diffs |
 | `n` / `p` | next / previous file in diff |
-| `q` | quit |
+| `q` | close the pane |
 
 Icons are emoji (no special font needed); `--icons none` turns them off.

@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,14 +15,8 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 2 && os.Args[1] == "open" {
-		os.Exit(openPane(os.Args[2]))
-	}
 	if len(os.Args) > 1 && os.Args[1] == "auto" {
 		os.Exit(autoOpen())
-	}
-	if len(os.Args) > 1 && os.Args[1] == "toggle" {
-		os.Exit(toggleFocus())
 	}
 
 	viewFlag := flag.String("view", "files", "initial view: files or diff")
@@ -37,20 +30,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-// openPane is what the [[actions]] run: it asks herdr to open one of this
-// plugin's panes, so the panes can be bound to keys.
-func openPane(entry string) int {
-	bin := envOr("HERDR_BIN_PATH", "herdr")
-	id := envOr("HERDR_PLUGIN_ID", "herdr-explorer")
-	cmd := exec.Command(bin, "plugin", "pane", "open", "--plugin", id, "--entrypoint", entry)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
 }
 
 func envOr(key, def string) string {

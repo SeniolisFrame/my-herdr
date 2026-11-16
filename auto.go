@@ -11,7 +11,7 @@ import (
 )
 
 // autoOpen runs from the [[startup]] and [[events]] hooks: it makes sure the
-// Files pane is open on the left of a tab, so nobody has to press prefix+f.
+// Files (left) and Changes (right) panes are open around the chat.
 // Create the file "no-auto" in the plugin config dir to turn this off.
 func autoOpen() int {
 	if dir := os.Getenv("HERDR_PLUGIN_CONFIG_DIR"); dir != "" {
@@ -27,7 +27,7 @@ func autoOpen() int {
 			return 1
 		}
 		for _, w := range wss {
-			ensureFilesPane(w.WorkspaceID, w.ActiveTabID)
+			ensurePanes(w.WorkspaceID, w.ActiveTabID)
 		}
 		return 0
 	}
@@ -52,7 +52,7 @@ func autoOpen() int {
 		fmt.Fprintf(os.Stderr, "auto: no workspace/tab in event %q\n", event)
 		return 0
 	}
-	ensureFilesPane(ws, tab)
+	ensurePanes(ws, tab)
 	return 0
 }
 
@@ -122,7 +122,9 @@ func tabLock(tab string) (release func(), ok bool) {
 	return func() { _ = os.Remove(p) }, true
 }
 
-func ensureFilesPane(ws, tab string) {
+// ensurePanes lays a tab out as  Files | chat | Changes , opening whichever
+// explorer pane is missing.
+func ensurePanes(ws, tab string) {
 	if ws == "" || tab == "" {
 		return
 	}
@@ -137,34 +139,58 @@ func ensureFilesPane(ws, tab string) {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-	var target *paneInfo
+	var chat *paneInfo
+	have := map[string]bool{}
 	for i := range panes {
 		p := &panes[i]
 		if p.TabID != tab {
 			continue
 		}
-		if p.Label == "Files" {
-			return // already there
-		}
-		if target == nil || p.Focused {
-			target = p
+		if p.Label == "Files" || p.Label == "Changes" {
+			have[p.Label] = true
+		} else if chat == nil || p.Focused {
+			chat = p
 		}
 	}
-	if target == nil {
+	if chat == nil {
 		return
 	}
+	// back = a pane we opened + the direction from it to the chat, so focus
+	// can return to the chat (herdr only focuses neighbours).
+	var back, dir string
+	// Changes first: split chat → [chat | Changes], Changes gets 30%.
+	if !have["Changes"] {
+		if id := openBeside(chat, "changes"); id != "" {
+			_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "right", "--amount", "0.2").Run()
+			back, dir = id, "left"
+		}
+	}
+	// Files: split chat again, then swap it to the chat's left and narrow it.
+	if !have["Files"] {
+		if id := openBeside(chat, "files"); id != "" {
+			_ = exec.Command(herdrBin(), "pane", "swap", "--pane", id, "--direction", "left").Run()
+			_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "left", "--amount", "0.25").Run()
+			back, dir = id, "right"
+		}
+	}
+	if back != "" {
+		_ = exec.Command(herdrBin(), "pane", "focus", "--pane", back, "--direction", dir).Run()
+	}
+}
 
+// openBeside opens an explorer entrypoint to the right of chat; returns its pane id.
+func openBeside(chat *paneInfo, entry string) string {
 	args := []string{"plugin", "pane", "open",
-		"--plugin", envOr("HERDR_PLUGIN_ID", "herdr-explorer"), "--entrypoint", "files",
-		"--target-pane", target.PaneID, "--direction", "right", "--no-focus",
-		"--env", "HERDR_EXPLORER_TARGET=" + target.PaneID}
-	if target.Cwd != "" {
-		args = append(args, "--env", "HERDR_EXPLORER_ROOT="+target.Cwd)
+		"--plugin", envOr("HERDR_PLUGIN_ID", "herdr-explorer"), "--entrypoint", entry,
+		"--target-pane", chat.PaneID, "--direction", "right", "--no-focus",
+		"--env", "HERDR_EXPLORER_TARGET=" + chat.PaneID}
+	if chat.Cwd != "" {
+		args = append(args, "--env", "HERDR_EXPLORER_ROOT="+chat.Cwd)
 	}
 	out, err := exec.Command(herdrBin(), args...).Output()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "pane open:", err)
-		return
+		fmt.Fprintln(os.Stderr, "pane open", entry+":", err)
+		return ""
 	}
 	var resp struct {
 		Result struct {
@@ -173,12 +199,8 @@ func ensureFilesPane(ws, tab string) {
 			} `json:"plugin_pane"`
 		} `json:"result"`
 	}
-	if json.Unmarshal(out, &resp) != nil || resp.Result.PluginPane.Pane.PaneID == "" {
-		return
+	if json.Unmarshal(out, &resp) != nil {
+		return ""
 	}
-	id := resp.Result.PluginPane.Pane.PaneID
-	// Narrow sidebar on the right of the chat (split 75/25).
-	_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "right", "--amount", "0.25").Run()
-	// Resize focuses the sidebar; give focus back to the chat.
-	_ = exec.Command(herdrBin(), "pane", "focus", "--pane", id, "--direction", "left").Run()
+	return resp.Result.PluginPane.Pane.PaneID
 }

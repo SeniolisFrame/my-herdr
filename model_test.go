@@ -66,15 +66,11 @@ func TestSnapshot(t *testing.T) {
 	}
 	m.trows = flatten(m.tree, nil)
 	t.Log("\n" + m.View())
-	// Enter on a changed file: diff loads, then the view jumps to that file.
-	m.view = viewFiles
-	cmd := m.jumpToDiff("main.go")
-	if cmd == nil || m.view != viewDiff {
-		t.Fatal("jumpToDiff did not switch to the diff view")
-	}
-	m.Update(cmd())
-	if r := m.drows[m.dcur]; r.line != -1 || m.diffs[r.file].path != "main.go" {
-		t.Fatalf("cursor not on main.go header: %+v", r)
+	// The Changes pane loads the full diff.
+	m.view = viewDiff
+	m.Update(m.loadCmd(true)())
+	if len(m.diffs) != 5 || m.drows[0].line != -1 {
+		t.Fatalf("want 5 file diffs starting with a header, got %d", len(m.diffs))
 	}
 	t.Log("\n" + m.View())
 }
