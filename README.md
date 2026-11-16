@@ -17,8 +17,7 @@ Each tab opens as `Files | chat | Changes` automatically.
 
 | Key | Action |
 | --- | --- |
-| `alt+e` / `prefix+tab` | next pane (herdr `cycle_pane_next`, set in config.toml) |
-| `tab` (in Files/Changes) | next pane: Files → chat, Changes → Files |
+| `alt+e` | next pane from anywhere (herdr `cycle_pane_next`, set in config.toml) |
 | `esc` | back to the chat |
 | `⏎` | open folder / fold file diff |
 | `s`, right-click | type `@path ` into the chat pane |

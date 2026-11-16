@@ -300,8 +300,6 @@ func (m *model) handleKey(k string) tea.Cmd {
 	switch k {
 	case "ctrl+c", "q":
 		return tea.Quit
-	case "tab":
-		return m.focusCmd(focusNext)
 	case "s":
 		return m.sendCmd(m.currentRel())
 	case "esc", "c":
@@ -580,9 +578,9 @@ func (m *model) footer() string {
 		return sErr.Render(m.err)
 	}
 	if m.view == viewFiles {
-		return sDim.Render("⏎ open  s send  tab next pane  esc chat  q quit")
+		return sDim.Render("⏎ open  s send  alt+e next pane  esc chat  q quit")
 	}
-	return sDim.Render("⏎ fold  a fold all  n/p file  s send  tab next  esc chat")
+	return sDim.Render("⏎ fold  a fold all  n/p file  s send  alt+e next  esc chat")
 }
 
 func (m *model) View() string {
