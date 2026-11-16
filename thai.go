@@ -7,4 +7,8 @@ var thaiKeys = map[string]string{
 	"่": "j", "า": "k", "้": "h", "ส": "l",
 	"เ": "g", "ฌ": "G", "ื": "n", "ย": "p", "น": "o",
 	"บ": "[", "ล": "]",
+	// Fork-like actions (shifted keys use the Kedmanee shift layer).
+	"ฆ": "S", "๊": "U", "ฏ": "D", "ิ": "b", "ฺ": "B", "ท": "m",
+	"ฯ": "O", "ธ": "T", ")": "X", "ด": "f", "โ": "F", "ญ": "P",
+	"ผ": "z", "(": "Z", "ศ": "L", "ฦ": "?",
 }

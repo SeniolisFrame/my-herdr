@@ -63,6 +63,22 @@ type model struct {
 	flash   string
 	flashAt time.Time
 	flashOK bool
+
+	staged  map[string]string // path -> full | partial
+	merging bool
+
+	mode      uiMode
+	prompt    string // modeInput
+	input     string
+	onInput   func(string) tea.Cmd
+	pickTitle string // modePick
+	choices   []string
+	ccur      int
+	coff      int
+	onPick    func(int) tea.Cmd
+	showTitle string // modeShow
+	logCur    int
+	help      bool
 }
 
 type flashMsg struct {
@@ -75,6 +91,8 @@ type dataMsg struct {
 	ahead, behind int
 	hasUpstream   bool
 	status        map[string]string
+	staged        map[string]string
+	merging       bool
 	diffs         []*fileDiff
 	err           error
 	withDiff      bool
@@ -89,6 +107,7 @@ func newModel(root string, startDiff bool, iconSet string) *model {
 		iconSet:   iconSet,
 		collapsed: map[string]bool{},
 		status:    map[string]string{},
+		staged:    map[string]string{},
 		dirtyDirs: map[string]bool{},
 		ctx:       readLaunchContext(),
 	}
@@ -118,7 +137,8 @@ func (m *model) loadCmd(withDiff bool) tea.Cmd {
 		if !isGit {
 			return dataMsg{status: map[string]string{}}
 		}
-		d := dataMsg{branch: gitBranch(root), status: gitStatus(root), withDiff: withDiff}
+		d := dataMsg{branch: gitBranch(root), merging: gitMerging(root), withDiff: withDiff}
+		d.status, d.staged = gitStatus(root)
 		d.ahead, d.behind, d.hasUpstream = gitAheadBehind(root)
 		if withDiff {
 			d.diffs, d.err = loadDiffs(root)
@@ -151,9 +171,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyData(msg)
 	case flashMsg:
 		m.flash, m.flashOK, m.flashAt = msg.text, msg.ok, time.Now()
+	case opMsg:
+		m.flash, m.flashOK, m.flashAt = msg.text, msg.err == nil, time.Now()
+		if msg.err != nil {
+			m.flash = msg.err.Error()
+		}
+		m.refreshTree()
+		m.loading = true
+		return m, m.loadCmd(m.view == viewDiff && m.mode != modeShow)
 	case tea.KeyMsg:
+		switch m.mode {
+		case modeInput:
+			return m, m.inputKey(msg)
+		case modePick:
+			return m, m.pickKey(msg.String())
+		}
 		return m, m.handleKey(msg.String())
 	case tea.MouseMsg:
+		if m.mode == modeInput || m.mode == modePick {
+			return m, nil
+		}
 		return m, m.handleMouse(msg)
 	}
 	return m, nil
@@ -210,6 +247,10 @@ func (m *model) applyData(d dataMsg) {
 		m.err = d.err.Error()
 	}
 	m.branch, m.ahead, m.behind, m.hasUpstream = d.branch, d.ahead, d.behind, d.hasUpstream
+	m.merging = d.merging
+	if d.staged != nil {
+		m.staged = d.staged
+	}
 	m.status = d.status
 	m.dirtyDirs = map[string]bool{}
 	for p := range d.status {
@@ -224,11 +265,16 @@ func (m *model) applyData(d dataMsg) {
 		r := m.drows[m.dcur]
 		curPath, curLine = m.diffs[r.file].path, r.line
 	}
-	if !d.withDiff {
+	if !d.withDiff || m.mode == modeShow {
 		return
 	}
 	if d.err == nil {
 		m.diffs = d.diffs
+		for _, f := range m.diffs {
+			if m.status[f.path] == "C" {
+				f.status = "C" // git diff shows conflicts as plain modifications
+			}
+		}
 	}
 	m.rebuildDiffRows()
 	if curPath != "" {
@@ -281,6 +327,7 @@ func (m *model) clamp() {
 	h := m.contentHeight()
 	m.tcur, m.toff = clampView(m.tcur, m.toff, len(m.trows), h)
 	m.dcur, m.doff = clampView(m.dcur, m.doff, len(m.drows), h)
+	m.ccur, m.coff = clampView(m.ccur, m.coff, len(m.choices), h-1) // title row
 }
 
 func clampView(cur, off, n, h int) (int, int) {
@@ -300,12 +347,36 @@ func (m *model) handleKey(k string) tea.Cmd {
 		k = latin
 	}
 	half := max(1, m.contentHeight()/2)
+	if m.help {
+		m.help = false
+		return nil
+	}
+	if m.mode == modeShow {
+		if k == "esc" || k == "q" || k == "backspace" {
+			m.mode, m.diffs = modeNormal, nil
+			m.rebuildDiffRows()
+			m.loading = true
+			return tea.Batch(m.loadCmd(true), m.openLog(m.logCur))
+		}
+		if !strings.Contains(" up down k j pgup pgdown ctrl+u ctrl+d home end g G enter o n p [ ] a ", " "+k+" ") {
+			return nil // read-only: no staging inside a past commit
+		}
+	} else {
+		if cmd, ok := m.repoKey(k); ok {
+			return cmd
+		}
+		if m.view == viewDiff {
+			if cmd, ok := m.changesKey(k); ok {
+				return cmd
+			}
+		}
+	}
 	switch k {
 	case "ctrl+c", "q":
 		return tea.Quit
 	case "s":
 		return m.sendCmd(m.currentRel())
-	case "esc", "c":
+	case "esc":
 		return m.focusCmd(focusChat)
 	case "r":
 		m.refreshTree()
@@ -370,7 +441,7 @@ func (m *model) handleKey(k string) tea.Cmd {
 		m.dcur = 0
 	case "end", "G":
 		m.dcur = len(m.drows) - 1
-	case "enter", " ", "o":
+	case "enter", "o":
 		if m.dcur < len(m.drows) {
 			m.toggleFile(m.drows[m.dcur].file)
 		}
@@ -520,13 +591,14 @@ var (
 	sBranch  = lipgloss.NewStyle().Foreground(lipgloss.Color("#0d1117")).Background(cBranch).Bold(true).Padding(0, 1)
 	sSelName = lipgloss.NewStyle().Reverse(true)
 	sGuide   = lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261"))
+	sMerging = lipgloss.NewStyle().Foreground(lipgloss.Color("#0d1117")).Background(cDel).Bold(true).Padding(0, 1)
 )
 
 func statusColor(code string) lipgloss.Color {
 	switch code {
 	case "A", "U":
 		return cAdd
-	case "D":
+	case "D", "C":
 		return cDel
 	case "R":
 		return cRen
@@ -542,6 +614,10 @@ func (m *model) title() string {
 		t = "Changes"
 		if n := len(m.status); n > 0 {
 			t += fmt.Sprintf(" %d", n)
+		}
+		t += countStaged(m.staged)
+		if m.mode == modeShow {
+			t = m.showTitle + " (esc back)"
 		}
 	}
 	if m.iconSet == "emoji" {
@@ -567,10 +643,16 @@ func (m *model) branchBar() string {
 	if m.hasUpstream && (m.ahead > 0 || m.behind > 0) {
 		s += " " + sDim.Render(fmt.Sprintf("↑%d ↓%d", m.ahead, m.behind))
 	}
+	if m.merging {
+		s += " " + sMerging.Render("MERGING")
+	}
 	return s + repo
 }
 
 func (m *model) footer() string {
+	if m.mode == modeInput {
+		return m.inputLine()
+	}
 	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
 		if m.flashOK {
 			return sAdd.Render(m.flash)
@@ -581,9 +663,15 @@ func (m *model) footer() string {
 		return sErr.Render(m.err)
 	}
 	if m.view == viewFiles {
-		return sDim.Render("⏎ open  s send  alt+e next pane  esc chat  q quit")
+		return sDim.Render("⏎ open  s send  esc chat  ? help")
 	}
-	return sDim.Render("⏎ fold  a fold all  n/p file  s send  alt+e next  esc chat")
+	if m.mode == modePick {
+		return sDim.Render("⏎ choose  esc back")
+	}
+	if m.mode == modeShow {
+		return sDim.Render("⏎ fold  n/p file  esc back to history")
+	}
+	return sDim.Render("␣ stage  c commit  L history  ? help")
 }
 
 func (m *model) View() string {
@@ -592,10 +680,18 @@ func (m *model) View() string {
 	}
 	h := m.contentHeight()
 	var lines []string
-	if m.view == viewFiles {
+	switch {
+	case m.help:
+		lines = helpText
+	case m.mode == modePick:
+		lines = m.pickLines(h)
+	case m.view == viewFiles:
 		lines = m.treeLines(h)
-	} else {
+	default:
 		lines = m.diffLines(h)
+	}
+	if len(lines) > h {
+		lines = lines[:h]
 	}
 	for len(lines) < h {
 		lines = append(lines, "")
@@ -734,7 +830,11 @@ func (m *model) fileHeader(f *fileDiff, sel bool) string {
 	if sel {
 		ns = ns.Inherit(sSelName)
 	}
-	s := sDim.Render(arrow) +
+	mark := ""
+	if m.mode != modeShow {
+		mark = stagedMark(m.staged[f.path])
+	}
+	s := sDim.Render(arrow) + mark +
 		lipgloss.NewStyle().Foreground(c).Bold(true).Render(f.status) + " " +
 		m.fileIconStr(filepath.Base(f.path)) +
 		ns.Render(name)

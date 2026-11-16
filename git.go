@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,8 +13,12 @@ import (
 )
 
 func git(root string, args ...string) (string, error) {
-	full := append([]string{"-C", root, "-c", "core.quotepath=off"}, args...)
-	out, err := exec.Command("git", full...).Output()
+	// --no-optional-locks: the 2s status poll must not hold index.lock while a
+	// stage/commit runs. No prompts/editors: they would hang inside the TUI.
+	full := append([]string{"--no-optional-locks", "-C", root, "-c", "core.quotepath=off"}, args...)
+	cmd := exec.Command("git", full...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true")
+	out, err := cmd.Output()
 	return string(out), err
 }
 
@@ -54,12 +59,12 @@ func gitAheadBehind(root string) (ahead, behind int, ok bool) {
 }
 
 // gitStatus maps slash-separated paths (relative to the repo top) to one of
-// M, A, D, R, U (untracked).
-func gitStatus(root string) map[string]string {
-	st := map[string]string{}
+// M, A, D, R, U (untracked), and staged paths to "full" or "partial".
+func gitStatus(root string) (st, staged map[string]string) {
+	st, staged = map[string]string{}, map[string]string{}
 	out, err := git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil {
-		return st
+		return st, staged
 	}
 	parts := strings.Split(out, "\x00")
 	for i := 0; i < len(parts); i++ {
@@ -70,6 +75,10 @@ func gitStatus(root string) map[string]string {
 		xy, p := e[:2], e[3:]
 		if xy[0] == 'R' || xy[0] == 'C' {
 			i++ // the original path follows
+		}
+		if strings.Contains(xy, "U") && xy != "??" || xy == "AA" || xy == "DD" {
+			st[p] = "C" // merge conflict
+			continue
 		}
 		switch {
 		case xy == "??":
@@ -83,8 +92,50 @@ func gitStatus(root string) map[string]string {
 		default:
 			st[p] = "M"
 		}
+		if xy[0] != ' ' && xy[0] != '?' {
+			staged[p] = "full"
+			if xy[1] != ' ' {
+				staged[p] = "partial"
+			}
+		}
 	}
-	return st
+	return st, staged
+}
+
+// setStaged stages (git add) or unstages a file. paths includes the old name
+// of a rename so both sides move together.
+func setStaged(root string, stage bool, paths ...string) error {
+	args := append([]string{"add", "-A", "--"}, paths...)
+	if !stage {
+		args = append([]string{"restore", "--staged", "--"}, paths...)
+		if !gitHasHead(root) {
+			args = append([]string{"rm", "-r", "-q", "--cached", "--"}, paths...) // no commits yet
+		}
+	}
+	return gitRun(root, args...)
+}
+
+// gitCommit commits what is staged and returns the new short hash. An empty
+// message finishing a merge keeps git's "Merge branch ..." message.
+func gitCommit(root, msg string) (string, error) {
+	args := []string{"commit", "-q", "-m", msg}
+	if msg == "" && gitMerging(root) {
+		args = []string{"commit", "-q", "--no-edit"}
+	}
+	if err := gitRun(root, args...); err != nil {
+		return "", err
+	}
+	out, err := git(root, "rev-parse", "--short", "HEAD")
+	return strings.TrimSpace(out), err
+}
+
+// gitErr turns git's stderr into the error text the footer shows.
+func gitErr(_ string, err error) error {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+		return errors.New(strings.TrimSpace(string(ee.Stderr)))
+	}
+	return err
 }
 
 type diffLine struct {
