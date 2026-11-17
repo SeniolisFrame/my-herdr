@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"herdr-explorer/internal/git"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -238,5 +240,25 @@ func TestBlameHistory(t *testing.T) {
 	press(m, "esc")
 	if m.reading != nil {
 		t.Fatal("second esc should close the reader")
+	}
+}
+
+// TestFooterPath shows the cursor's full path, cut from the left.
+func TestFooterPath(t *testing.T) {
+	r := newRepo(t)
+	deep := "src/main/java/com/example/app/Main.java"
+	must(t, os.MkdirAll(filepath.Join(r, filepath.Dir(deep)), 0o755))
+	write(t, r, deep, "class Main {}\n")
+	m := newModel(r, false, "none")
+	m.width, m.height = 24, 20
+	for i := 0; i < 7; i++ { // open src … app, then step onto Main.java
+		press(m, "down")
+		if n := m.trows[m.tcur]; n.isDir && !n.open {
+			m.toggleDir(n)
+		}
+	}
+	lines := strings.Split(m.View(), "\n")
+	if foot := lines[len(lines)-1]; !strings.HasPrefix(foot, "…") || !strings.HasSuffix(foot, "Main.java") {
+		t.Fatalf("footer should end with the file name: %q (cursor %s)", foot, m.currentRel())
 	}
 }

@@ -111,6 +111,11 @@ func (m *model) footer() string {
 		return m.readerFooter()
 	}
 	if m.view == viewFiles {
+		// Deep paths (Java packages) don't fit the narrow tree: show the
+		// cursor's full path here, cut from the left so the name stays.
+		if rel := m.currentRel(); rel != "" {
+			return sDim.Render(cutLeft(rel, m.width))
+		}
 		return sDim.Render("⏎ open  s send  esc chat  ? help")
 	}
 	if m.mode == modePick {
@@ -319,4 +324,16 @@ func (m *model) diffLine(l git.Line) string {
 	default:
 		return "   " + gutter + " " + text
 	}
+}
+
+// cutLeft keeps the end of s within w cells: "…/example/Main.java".
+func cutLeft(s string, w int) string {
+	if ansi.StringWidth(s) <= w {
+		return s
+	}
+	r := []rune(s)
+	for len(r) > 0 && ansi.StringWidth(string(r))+1 > w {
+		r = r[1:]
+	}
+	return "…" + string(r)
 }
