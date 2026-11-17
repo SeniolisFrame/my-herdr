@@ -130,10 +130,14 @@ func gitCommit(root, msg string) (string, error) {
 }
 
 // gitErr turns git's stderr into the error text the footer shows.
-func gitErr(_ string, err error) error {
+func gitErr(out string, err error) error {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) && len(ee.Stderr) > 0 {
 		return errors.New(strings.TrimSpace(string(ee.Stderr)))
+	}
+	// Some failures (e.g. "nothing to commit") are reported on stdout only.
+	if lines := strings.Split(strings.TrimSpace(out), "\n"); err != nil && lines[len(lines)-1] != "" {
+		return errors.New(lines[len(lines)-1])
 	}
 	return err
 }

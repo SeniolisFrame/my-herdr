@@ -193,6 +193,10 @@ func (m *model) changesKey(k string) (tea.Cmd, bool) {
 	case "U":
 		return m.op("unstaging all", func() (string, error) { return "unstaged all", setStaged(root, false, ".") }), true
 	case "c":
+		if len(m.staged) == 0 && !m.merging {
+			m.flash, m.flashOK, m.flashAt = "nothing staged: space stages a file, S stages all", false, time.Now()
+			return nil, true
+		}
 		prompt := "commit message"
 		if m.merging {
 			prompt = "merge commit message (empty = default)"

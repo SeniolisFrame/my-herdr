@@ -59,6 +59,10 @@ func TestUIFlow(t *testing.T) {
 	write(t, r, "a.txt", "two\n")
 	drain(m, m.loadCmd(true))
 
+	press(m, "c")
+	if m.mode != modeNormal || !strings.Contains(m.flash, "nothing staged") {
+		t.Fatalf("c with nothing staged should explain, mode %v flash %q", m.mode, m.flash)
+	}
 	press(m, " ")
 	if m.staged["a.txt"] != "full" || !strings.Contains(m.View(), "✓") {
 		t.Fatalf("space should stage a.txt: %v\n%s", m.staged, m.View())
