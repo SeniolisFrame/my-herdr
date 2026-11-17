@@ -278,6 +278,8 @@ func contains(list []string, s string) bool {
 }
 
 var helpText = []string{
+	"Files pane",
+	"  enter   open folder / read file (pane zooms, esc closes)",
 	"Changes pane",
 	"  space   stage / unstage file (on its header) or hunk (inside it)",
 	"  S / U   stage / unstage all",

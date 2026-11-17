@@ -32,6 +32,8 @@ type drow struct {
 }
 
 type model struct {
+	reading *fileDiff // Files pane: file open in the reader (reader.go)
+	roff    int
 	root    string
 	isGit   bool
 	iconSet string // emoji | none
@@ -351,6 +353,9 @@ func (m *model) handleKey(k string) tea.Cmd {
 		m.help = false
 		return nil
 	}
+	if m.reading != nil {
+		return m.readerKey(k)
+	}
 	if m.mode == modeShow {
 		if k == "esc" || k == "q" || k == "backspace" {
 			m.mode, m.diffs = modeNormal, nil
@@ -408,6 +413,8 @@ func (m *model) handleKey(k string) tea.Cmd {
 		case "enter", " ":
 			if cur != nil && cur.isDir {
 				m.toggleDir(cur)
+			} else if cur != nil {
+				return m.openReader(cur.rel)
 			}
 		case "right", "l":
 			if cur != nil && cur.isDir && !cur.open {
@@ -620,7 +627,12 @@ func (m *model) title() string {
 			t = m.showTitle + " (esc back)"
 		}
 	}
-	if m.iconSet == "emoji" {
+	if m.reading != nil {
+		t = m.reading.path
+	}
+	if m.iconSet == "emoji" && m.reading != nil {
+		t = "📄 " + t
+	} else if m.iconSet == "emoji" {
 		t = map[viewKind]string{viewFiles: "📁 ", viewDiff: "🔀 "}[m.view] + t
 	}
 	return sTitle.Render(t)
@@ -662,6 +674,9 @@ func (m *model) footer() string {
 	if m.err != "" {
 		return sErr.Render(m.err)
 	}
+	if m.reading != nil {
+		return sDim.Render("esc close  s send  j/k scroll")
+	}
 	if m.view == viewFiles {
 		return sDim.Render("⏎ open  s send  esc chat  ? help")
 	}
@@ -685,6 +700,8 @@ func (m *model) View() string {
 		lines = helpText
 	case m.mode == modePick:
 		lines = m.pickLines(h)
+	case m.reading != nil:
+		lines = m.readerLines(h)
 	case m.view == viewFiles:
 		lines = m.treeLines(h)
 	default:

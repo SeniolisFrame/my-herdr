@@ -131,3 +131,27 @@ func TestUIFlow(t *testing.T) {
 		t.Fatalf("discard should leave a clean tree, got %v (flash %q)", m.status, m.flash)
 	}
 }
+
+// TestReader opens a file from the Files pane, scrolls, and closes it.
+func TestReader(t *testing.T) {
+	r := newRepo(t)
+	write(t, r, "a.txt", strings.Repeat("row\n", 100))
+	m := newModel(r, false, "none")
+	m.width, m.height = 60, 20
+	m.refreshTree()
+	for m.tcur < len(m.trows) && m.trows[m.tcur].rel != "a.txt" {
+		m.tcur++
+	}
+	press(m, "enter")
+	if m.reading == nil || !strings.Contains(m.View(), "   1 │ row") {
+		t.Fatalf("enter should open a.txt:\n%s", m.View())
+	}
+	press(m, "G")
+	if !strings.Contains(m.View(), " 100 │ row") {
+		t.Fatalf("G should scroll to the last line:\n%s", m.View())
+	}
+	press(m, "esc")
+	if m.reading != nil {
+		t.Fatal("esc should close the reader")
+	}
+}
