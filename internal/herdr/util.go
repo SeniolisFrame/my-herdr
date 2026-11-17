@@ -1,6 +1,7 @@
 package herdr
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,56 @@ func Zoom(on bool) {
 	if pane := os.Getenv("HERDR_PANE_ID"); pane != "" {
 		flag := map[bool]string{true: "--on", false: "--off"}[on]
 		_ = exec.Command(Bin(), "pane", "zoom", "--pane", pane, flag).Run()
+	}
+}
+
+// Focus reports which pane has focus in this pane's tab and whether it is
+// this pane; ok is false outside herdr or when herdr can't be asked.
+func Focus() (self bool, focused string, ok bool) {
+	me := os.Getenv("HERDR_PANE_ID")
+	panes, err := ListPanes()
+	if me == "" || err != nil {
+		return false, "", false
+	}
+	tab := ""
+	for _, p := range panes {
+		if p.PaneID == me {
+			tab = p.TabID
+		}
+	}
+	for _, p := range panes {
+		if p.Focused && p.TabID == tab {
+			return p.PaneID == me, p.PaneID, true
+		}
+	}
+	return false, "", false
+}
+
+// UnzoomTo unzooms this pane, which also pulls focus back to it, then walks
+// focus right until it reaches want again (the pane alt+e moved to).
+func UnzoomTo(want string) {
+	me := os.Getenv("HERDR_PANE_ID")
+	Zoom(false)
+	cur := me
+	for range 3 {
+		if cur == want || want == "" {
+			return
+		}
+		out, err := exec.Command(Bin(), "pane", "focus", "--pane", cur, "--direction", "right").Output()
+		if err != nil {
+			return
+		}
+		var resp struct {
+			Result struct {
+				Focus struct {
+					ID string `json:"focused_pane_id"`
+				} `json:"focus"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(out, &resp) != nil || resp.Result.Focus.ID == cur {
+			return
+		}
+		cur = resp.Result.Focus.ID
 	}
 }
 

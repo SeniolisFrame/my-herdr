@@ -55,7 +55,7 @@ func (m *model) openReader(rel string) tea.Cmd {
 	}
 	r.segs = highlight(rel, r.lines)
 	m.reading = r
-	return zoomCmd(true)
+	return m.zoomCmd(true)
 }
 
 // highlight colours the whole file at once so multi-line comments and
@@ -166,7 +166,7 @@ func (m *model) readerKey(k string) tea.Cmd {
 		if m.reading = r.back; r.back != nil {
 			return nil
 		}
-		return zoomCmd(false)
+		return m.zoomCmd(false)
 	case "b":
 		m.toggleBlame()
 		return nil
@@ -337,6 +337,6 @@ func (m *model) searchAll() tea.Cmd {
 			m.reading.goLine(n-1, m.contentHeight())
 			return cmd
 		})
-		return zoomCmd(true)
+		return m.zoomCmd(true)
 	})
 }

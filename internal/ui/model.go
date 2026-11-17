@@ -32,12 +32,14 @@ type drow struct {
 }
 
 type model struct {
-	chatCwd string  // chat pane's folder at the last poll (follow.go)
-	reading *reader // Files pane: file open in the reader (reader.go)
-	root    string
-	isGit   bool
-	iconSet string // emoji | none
-	view    viewKind
+	watching  bool    // polling focus while zoomed (panes.go)
+	zoomedOut bool    // zoomed view left via alt+e, so unzoomed for now
+	chatCwd   string  // chat pane's folder at the last poll (follow.go)
+	reading   *reader // Files pane: file open in the reader (reader.go)
+	root      string
+	isGit     bool
+	iconSet   string // emoji | none
+	view      viewKind
 
 	width, height int
 
@@ -169,6 +171,8 @@ func (m *model) contentHeight() int {
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case focusMsg:
+		return m, m.onFocus(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.clamp()

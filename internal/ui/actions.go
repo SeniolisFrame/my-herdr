@@ -89,7 +89,7 @@ func (m *model) pickKey(k string) tea.Cmd {
 	case "esc", "q":
 		m.mode = modeNormal
 		if m.view == viewFiles && m.reading == nil {
-			return zoomCmd(false) // back from search-all results
+			return m.zoomCmd(false) // back from search-all results
 		}
 	case "enter", " ":
 		m.mode = modeNormal

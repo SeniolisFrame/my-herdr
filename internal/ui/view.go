@@ -289,17 +289,20 @@ func (m *model) fileHeader(f *git.FileDiff, sel bool) string {
 	if m.mode != modeShow {
 		mark = stagedMark(m.staged[f.Path])
 	}
-	s := sDim.Render(arrow) + mark +
+	head := sDim.Render(arrow) + mark +
 		lipgloss.NewStyle().Foreground(c).Bold(true).Render(f.Status) + " " +
-		m.fileIconStr(filepath.Base(f.Path)) +
-		ns.Render(name)
+		m.fileIconStr(filepath.Base(f.Path))
+	tail := ""
 	if f.Adds > 0 {
-		s += " " + sAdd.Render(fmt.Sprintf("+%d", f.Adds))
+		tail += " " + sAdd.Render(fmt.Sprintf("+%d", f.Adds))
 	}
 	if f.Dels > 0 {
-		s += " " + sDel.Render(fmt.Sprintf("-%d", f.Dels))
+		tail += " " + sDel.Render(fmt.Sprintf("-%d", f.Dels))
 	}
-	return s
+	// Cut a long path from the left so the file name and counts stay visible
+	// (1 cell for the cursor mark in front).
+	room := max(m.width-1-ansi.StringWidth(head)-ansi.StringWidth(tail), 8)
+	return head + ns.Render(cutLeft(name, room)) + tail
 }
 
 func lineNo(n int) string {

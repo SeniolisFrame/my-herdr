@@ -262,3 +262,36 @@ func TestFooterPath(t *testing.T) {
 		t.Fatalf("footer should end with the file name: %q (cursor %s)", foot, m.currentRel())
 	}
 }
+
+// TestChangesPathCut cuts a deep path in a Changes header from the left.
+func TestChangesPathCut(t *testing.T) {
+	r := newRepo(t)
+	deep := "src/main/java/com/example/app/Main.java"
+	must(t, os.MkdirAll(filepath.Join(r, filepath.Dir(deep)), 0o755))
+	write(t, r, deep, "class Main {}\n")
+	m := newModel(r, true, "none")
+	m.width, m.height = 30, 20
+	drain(m, m.loadCmd(true))
+	v := m.View()
+	if !strings.Contains(v, "…") || !strings.Contains(v, "Main.java +1") {
+		t.Fatalf("header should keep the name and counts:\n%s", v)
+	}
+}
+
+// TestZoomFollowsFocus: leaving a zoomed reader unzooms, coming back rezooms.
+func TestZoomFollowsFocus(t *testing.T) {
+	m := newModel(t.TempDir(), false, "none")
+	m.reading = &reader{}
+	m.onFocus(focusMsg{self: false, focused: "chat", ok: true})
+	if !m.zoomedOut {
+		t.Fatal("focus moved away: should unzoom")
+	}
+	m.onFocus(focusMsg{self: true, ok: true})
+	if m.zoomedOut {
+		t.Fatal("focus came back: should zoom again")
+	}
+	m.reading = nil
+	if m.onFocus(focusMsg{self: true, ok: true}); m.watching {
+		t.Fatal("reader closed: stop watching")
+	}
+}
