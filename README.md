@@ -26,7 +26,7 @@ Changes pane (Fork-like):
 
 | Key | Action |
 | --- | --- |
-| `space` / `S` / `U` | stage-unstage file / stage all / unstage all (✓ staged, ~ partly) |
+| `space` / `S` / `U` | stage-unstage file (cursor on its header) or one hunk (cursor inside it) / stage all / unstage all (✓ staged, ~ partly) |
 | `c` | commit message box (empty during a merge = git's merge message) |
 | `D` | discard the file's changes (asks first) |
 | `⏎` `a` `n` `p` | fold file / fold all / next / previous file |

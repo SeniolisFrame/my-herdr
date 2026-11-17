@@ -87,6 +87,47 @@ func gitResolve(root, path, side string) error {
 	return gitRun(root, "add", "--", path)
 }
 
+// gitToggleHunk stages hunk n (0-based) of path's HEAD→worktree diff, or
+// unstages it when the index already holds it.
+// shortcut: staged-ness is guessed with `apply --check -R`; a hunk that is only
+// partly staged can't be toggled (stage/unstage the whole file instead).
+func gitToggleHunk(root, path string, n int) (string, error) {
+	out, err := git(root, "diff", "HEAD", "--no-color", "--no-ext-diff", "--", path)
+	if err != nil {
+		return "", gitErr(out, err)
+	}
+	patch := oneHunk(out, n)
+	if patch == "" {
+		return "", errors.New("hunk changed: press r to refresh")
+	}
+	if _, err := gitIn(root, patch, "apply", "--cached", "--check", "-R"); err == nil {
+		return "unstaged hunk", gitErr(gitIn(root, patch, "apply", "--cached", "-R"))
+	}
+	return "staged hunk", gitErr(gitIn(root, patch, "apply", "--cached"))
+}
+
+// oneHunk keeps the file header and hunk n of a one-file diff, byte for byte
+// (CRLF included); "" if there is no such hunk.
+func oneHunk(diff string, n int) string {
+	var head, hunk strings.Builder
+	i := -1
+	for _, l := range strings.SplitAfter(diff, "\n") {
+		if strings.HasPrefix(l, "@@") {
+			i++
+		}
+		switch {
+		case i < 0:
+			head.WriteString(l)
+		case i == n:
+			hunk.WriteString(l)
+		}
+	}
+	if hunk.Len() == 0 {
+		return ""
+	}
+	return head.String() + hunk.String()
+}
+
 // gitDiscard throws away all changes to one file (the caller confirms first).
 func gitDiscard(root string, f *fileDiff) error {
 	switch f.status {

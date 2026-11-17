@@ -185,6 +185,16 @@ func (m *model) changesKey(k string) (tea.Cmd, bool) {
 		if f == nil {
 			return nil, true
 		}
+		if line := m.drows[m.dcur].line; line >= 0 && f.status == "M" {
+			n := -1 // which hunk the cursor is in
+			for _, l := range f.lines[:line+1] {
+				if l.kind == '@' {
+					n++
+				}
+			}
+			path := f.path
+			return m.op("staging hunk", func() (string, error) { return gitToggleHunk(root, path, n) }), true
+		}
 		stage := m.staged[f.path] != "full"
 		verb := map[bool]string{true: "staged ", false: "unstaged "}[stage]
 		return m.op("staging", func() (string, error) { return verb + f.path, setStaged(root, stage, paths()...) }), true
@@ -269,7 +279,8 @@ func contains(list []string, s string) bool {
 
 var helpText = []string{
 	"Changes pane",
-	"  space   stage / unstage file      S / U  stage / unstage all",
+	"  space   stage / unstage file (on its header) or hunk (inside it)",
+	"  S / U   stage / unstage all",
 	"  c       commit (message box)      D      discard file changes",
 	"  enter   fold file   a fold all    n / p  next / previous file",
 	"  O / T   conflict: take ours / theirs (or edit + space)",

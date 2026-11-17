@@ -12,12 +12,16 @@ import (
 	"strings"
 )
 
-func git(root string, args ...string) (string, error) {
+func git(root string, args ...string) (string, error) { return gitIn(root, "", args...) }
+
+// gitIn is git with stdin (for `git apply` of a patch).
+func gitIn(root, stdin string, args ...string) (string, error) {
 	// --no-optional-locks: the 2s status poll must not hold index.lock while a
 	// stage/commit runs. No prompts/editors: they would hang inside the TUI.
 	full := append([]string{"--no-optional-locks", "-C", root, "-c", "core.quotepath=off"}, args...)
 	cmd := exec.Command("git", full...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true")
+	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.Output()
 	return string(out), err
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,5 +132,33 @@ func TestGitFlow(t *testing.T) {
 	local, remotes := gitBranches(r)
 	if len(local) != 2 || len(remotes) != 1 {
 		t.Fatalf("branches: %v %v", local, remotes)
+	}
+}
+
+// TestHunkStage stages and unstages one hunk of a CRLF file with two hunks.
+func TestHunkStage(t *testing.T) {
+	r := newRepo(t)
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d", i)
+	}
+	body := func() string { return strings.Join(lines, "\r\n") + "\r\n" }
+	write(t, r, "a.txt", body())
+	must(t, setStaged(r, true, "a.txt"))
+	_, err := gitCommit(r, "init")
+	must(t, err)
+	lines[1], lines[18] = "first", "second"
+	write(t, r, "a.txt", body())
+
+	msg, err := gitToggleHunk(r, "a.txt", 1)
+	must(t, err)
+	cached, _ := git(r, "diff", "--cached")
+	if msg != "staged hunk" || !strings.Contains(cached, "+second") || strings.Contains(cached, "+first") {
+		t.Fatalf("want only the second hunk staged (%s):\n%s", msg, cached)
+	}
+	msg, err = gitToggleHunk(r, "a.txt", 1)
+	must(t, err)
+	if cached, _ := git(r, "diff", "--cached"); msg != "unstaged hunk" || cached != "" {
+		t.Fatalf("toggle again should unstage (%s):\n%s", msg, cached)
 	}
 }
