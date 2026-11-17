@@ -5,7 +5,7 @@ package main
 // Used by handleKey (model.go) and pickKey (ops.go) before their key switch.
 var thaiKeys = map[string]string{
 	// Explorer shortcuts (unshifted keys, plus Shift+G for G).
-	"ๆ": "q", "ห": "s", "แ": "c", "พ": "r", "ฟ": "a",
+	"ๆ": "q", "ห": "s", "แ": "c", "ฟ": "a",
 	"่": "j", "า": "k", "้": "h", "ส": "l",
 	"เ": "g", "ฌ": "G", "ื": "n", "ย": "p", "น": "o",
 	"บ": "[", "ล": "]",

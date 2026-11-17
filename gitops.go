@@ -98,7 +98,7 @@ func gitToggleHunk(root, path string, n int) (string, error) {
 	}
 	patch := oneHunk(out, n)
 	if patch == "" {
-		return "", errors.New("hunk changed: press r to refresh")
+		return "", errors.New("hunk changed: wait for the refresh and try again")
 	}
 	if _, err := gitIn(root, patch, "apply", "--cached", "--check", "-R"); err == nil {
 		return "unstaged hunk", gitErr(gitIn(root, patch, "apply", "--cached", "-R"))

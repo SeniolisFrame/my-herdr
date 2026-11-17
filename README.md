@@ -33,6 +33,7 @@ Changes pane (Fork-like):
 | `L` | history graph of all branches; `⏎` shows a commit, `esc` back |
 | `O` / `T` | conflict (status `C`): take ours / theirs, or edit and `space` |
 
+Both panes follow the chat pane's folder (checked every 2s).
 Both panes: `b` checkout branch, `B` new branch, `m` merge, `X` abort merge,
 `f` fetch, `F` pull, `P` push, `z` stash, `Z` pop stash. Every key also works
 on the Thai (Kedmanee) layout.

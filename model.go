@@ -32,6 +32,7 @@ type drow struct {
 }
 
 type model struct {
+	chatCwd string  // chat pane's folder at the last poll (follow.go)
 	reading *reader // Files pane: file open in the reader (reader.go)
 	root    string
 	isGit   bool
@@ -97,6 +98,7 @@ type dataMsg struct {
 	diffs         []*fileDiff
 	err           error
 	withDiff      bool
+	cwd, newRoot  string // chat pane's folder; set newRoot when that is another repo/folder
 }
 
 type tickMsg struct{}
@@ -133,12 +135,18 @@ func tick() tea.Cmd {
 // loadCmd always reads branch + status (cheap); the full diff only when
 // withDiff, because every tab runs its own explorer on a 2s timer.
 func (m *model) loadCmd(withDiff bool) tea.Cmd {
-	root, isGit := m.root, m.isGit
+	root, isGit, last := m.root, m.isGit, m.chatCwd
 	return func() tea.Msg {
-		if !isGit {
-			return dataMsg{status: map[string]string{}}
+		cwd := chatCwd()
+		if cwd != "" && cwd != last { // only a moved chat pane costs a git call
+			if r := rootOf(cwd); !samePath(r, root) {
+				return dataMsg{cwd: cwd, newRoot: r}
+			}
 		}
-		d := dataMsg{branch: gitBranch(root), merging: gitMerging(root), withDiff: withDiff}
+		if !isGit {
+			return dataMsg{status: map[string]string{}, cwd: cwd}
+		}
+		d := dataMsg{branch: gitBranch(root), merging: gitMerging(root), withDiff: withDiff, cwd: cwd}
 		d.status, d.staged = gitStatus(root)
 		d.ahead, d.behind, d.hasUpstream = gitAheadBehind(root)
 		if withDiff {
@@ -169,6 +177,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	case dataMsg:
 		m.loading = false
+		if msg.newRoot != "" {
+			// Switch only while idle; otherwise the next poll asks again.
+			if m.mode == modeNormal && m.reading == nil && !m.help {
+				m.switchRoot(msg.newRoot)
+				m.chatCwd = msg.cwd
+				m.loading = true
+				return m, m.loadCmd(m.view == viewDiff)
+			}
+			return m, nil
+		}
+		if msg.cwd != "" {
+			m.chatCwd = msg.cwd
+		}
 		m.applyData(msg)
 	case flashMsg:
 		m.flash, m.flashOK, m.flashAt = msg.text, msg.ok, time.Now()
@@ -382,13 +403,6 @@ func (m *model) handleKey(k string) tea.Cmd {
 		return m.sendCmd(m.currentRel())
 	case "esc":
 		return m.focusCmd(focusChat)
-	case "r":
-		m.refreshTree()
-		if !m.loading {
-			m.loading = true
-			return m.loadCmd(m.view == viewDiff)
-		}
-		return nil
 	}
 
 	if m.view == viewFiles {

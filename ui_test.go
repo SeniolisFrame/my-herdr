@@ -183,3 +183,18 @@ func TestReader(t *testing.T) {
 		t.Fatalf("enter should open a.txt at row 70:\n%s", v)
 	}
 }
+
+// TestFollow switches the panes to the chat pane's new folder.
+func TestFollow(t *testing.T) {
+	a, b := newRepo(t), newRepo(t)
+	write(t, b, "only-in-b.txt", "x\n")
+	m := newModel(a, false, "none")
+	m.width, m.height = 60, 20
+	m.Update(dataMsg{cwd: b, newRoot: b})
+	if m.root != b || m.chatCwd != b || !strings.Contains(m.View(), "only-in-b.txt") {
+		t.Fatalf("should follow to %s, root %s:\n%s", b, m.root, m.View())
+	}
+	if m.width != 60 {
+		t.Fatal("size must be kept")
+	}
+}
