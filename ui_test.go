@@ -198,3 +198,44 @@ func TestFollow(t *testing.T) {
 		t.Fatal("size must be kept")
 	}
 }
+
+// TestBlameHistory toggles blame and opens a commit from the file's history.
+func TestBlameHistory(t *testing.T) {
+	r := newRepo(t)
+	write(t, r, "a.txt", "first\n")
+	must(t, setStaged(r, true, "a.txt"))
+	_, err := gitCommit(r, "one")
+	must(t, err)
+	write(t, r, "a.txt", "first\nsecond\n")
+	must(t, setStaged(r, true, "a.txt"))
+	h2, err := gitCommit(r, "two")
+	must(t, err)
+	write(t, r, "a.txt", "first\nsecond\nthird\n")
+
+	m := newModel(r, false, "none")
+	m.width, m.height = 90, 20
+	m.refreshTree()
+	for m.tcur = 0; m.trows[m.tcur].rel != "a.txt"; m.tcur++ {
+	}
+	press(m, "enter", "b")
+	v := m.View()
+	if !strings.Contains(v, h2+" t") || !strings.Contains(v, "second") || !strings.Contains(v, "not committed") {
+		t.Fatalf("blame should show %s and the uncommitted line:\n%s", h2, v)
+	}
+	press(m, "L")
+	if m.mode != modePick || !strings.Contains(m.View(), "two") || !strings.Contains(m.View(), "one") {
+		t.Fatalf("L should list both commits:\n%s", m.View())
+	}
+	press(m, "enter") // newest: two
+	if v := m.View(); !strings.Contains(v, "a.txt @ "+h2) || !strings.Contains(v, "+second") {
+		t.Fatalf("enter should show commit two's diff:\n%s", v)
+	}
+	press(m, "esc")
+	if m.reading == nil || m.reading.back != nil || m.reading.blame == nil {
+		t.Fatal("esc should return to the file, blame still on")
+	}
+	press(m, "esc")
+	if m.reading != nil {
+		t.Fatal("second esc should close the reader")
+	}
+}

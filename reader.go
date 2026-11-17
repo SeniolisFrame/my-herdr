@@ -34,6 +34,9 @@ type rrow struct {
 }
 
 type reader struct {
+	rel     string  // the file (for s, b, L)
+	back    *reader // esc returns here (a commit opened from the file's history)
+	blame   []string
 	f       *fileDiff
 	lines   []diffLine // the file's lines (no '@' header)
 	segs    [][]seg    // highlighted, per source line
@@ -47,7 +50,7 @@ type reader struct {
 
 func (m *model) openReader(rel string) tea.Cmd {
 	f := untrackedDiff(m.root, rel)
-	r := &reader{f: f, lines: f.lines}
+	r := &reader{rel: rel, f: f, lines: f.lines}
 	if len(r.lines) > 0 && r.lines[0].kind == '@' {
 		r.lines = r.lines[1:]
 	}
@@ -108,7 +111,7 @@ const gutterW = 7 // "1234 │ "
 
 // layout wraps the highlighted lines to the pane width (cached per width).
 func (r *reader) layout(width int) {
-	w := max(width-gutterW, 8)
+	w := max(width-gutterW-r.blameW(), 8)
 	if r.width == w && r.rows != nil {
 		return
 	}
@@ -161,10 +164,17 @@ func (m *model) readerKey(k string) tea.Cmd {
 	r.layout(m.width)
 	switch k {
 	case "esc", "q", "backspace", "enter", "left", "h":
-		m.reading = nil
+		if m.reading = r.back; r.back != nil {
+			return nil
+		}
 		return zoomCmd(false)
+	case "b":
+		m.toggleBlame()
+		return nil
+	case "L":
+		return m.fileHistory()
 	case "s":
-		return m.sendCmd(r.f.path)
+		return m.sendCmd(r.rel)
 	case "/":
 		return m.ask("search file", func(q string) tea.Cmd {
 			r.search(q)
@@ -268,6 +278,13 @@ func (m *model) readerLines(h int) []string {
 			}
 			g = num + sDim.Render(" │ ")
 		}
+		if r.blame != nil {
+			b := strings.Repeat(" ", blameW)
+			if row.first && row.src < len(r.blame) {
+				b = r.blame[row.src]
+			}
+			g = sMatch.Render(b[:min(7, len(b))]) + sDim.Render(b[min(7, len(b)):]) + g
+		}
 		out = append(out, g+row.text)
 	}
 	return out
@@ -276,7 +293,7 @@ func (m *model) readerLines(h int) []string {
 func (m *model) readerFooter() string {
 	r := m.reading
 	if r.query == "" {
-		return sDim.Render("/ search  s send  esc close")
+		return sDim.Render("/ search  b blame  L history  s send  esc close")
 	}
 	if len(r.matches) == 0 {
 		return sErr.Render("no match: " + r.query)
