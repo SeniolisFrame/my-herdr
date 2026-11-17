@@ -86,6 +86,9 @@ func (m *model) pickKey(k string) tea.Cmd {
 		m.ccur = len(m.choices) - 1
 	case "esc", "q":
 		m.mode = modeNormal
+		if m.view == viewFiles && m.reading == nil {
+			return zoomCmd(false) // back from search-all results
+		}
 	case "enter", " ":
 		m.mode = modeNormal
 		if m.ccur < len(m.choices) {
@@ -280,6 +283,7 @@ func contains(list []string, s string) bool {
 var helpText = []string{
 	"Files pane",
 	"  enter   open folder / read file (pane zooms, esc closes)",
+	"  /       search all files; in a file: / search, n / N next / prev",
 	"Changes pane",
 	"  space   stage / unstage file (on its header) or hunk (inside it)",
 	"  S / U   stage / unstage all",

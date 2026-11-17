@@ -32,8 +32,7 @@ type drow struct {
 }
 
 type model struct {
-	reading *fileDiff // Files pane: file open in the reader (reader.go)
-	roff    int
+	reading *reader // Files pane: file open in the reader (reader.go)
 	root    string
 	isGit   bool
 	iconSet string // emoji | none
@@ -406,6 +405,8 @@ func (m *model) handleKey(k string) tea.Cmd {
 			m.tcur -= half
 		case "pgdown", "ctrl+d":
 			m.tcur += half
+		case "/":
+			return m.searchAll()
 		case "home", "g":
 			m.tcur = 0
 		case "end", "G":
@@ -628,7 +629,7 @@ func (m *model) title() string {
 		}
 	}
 	if m.reading != nil {
-		t = m.reading.path
+		t = m.reading.f.path
 	}
 	if m.iconSet == "emoji" && m.reading != nil {
 		t = "📄 " + t
@@ -675,7 +676,7 @@ func (m *model) footer() string {
 		return sErr.Render(m.err)
 	}
 	if m.reading != nil {
-		return sDim.Render("esc close  s send  j/k scroll")
+		return m.readerFooter()
 	}
 	if m.view == viewFiles {
 		return sDim.Render("⏎ open  s send  esc chat  ? help")

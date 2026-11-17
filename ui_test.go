@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -132,26 +133,53 @@ func TestUIFlow(t *testing.T) {
 	}
 }
 
-// TestReader opens a file from the Files pane, scrolls, and closes it.
+// TestReader opens a file from the Files pane, scrolls, wraps, searches,
+// and finds it again through search-all.
 func TestReader(t *testing.T) {
 	r := newRepo(t)
-	write(t, r, "a.txt", strings.Repeat("row\n", 100))
+	var b strings.Builder
+	for i := 1; i <= 100; i++ {
+		fmt.Fprintf(&b, "row %d\n", i)
+	}
+	b.WriteString(strings.Repeat("x", 130) + "\n")
+	write(t, r, "a.txt", b.String())
+	write(t, r, "m.go", "package main\n\nfunc main() {}\n")
 	m := newModel(r, false, "none")
 	m.width, m.height = 60, 20
 	m.refreshTree()
-	for m.tcur < len(m.trows) && m.trows[m.tcur].rel != "a.txt" {
-		m.tcur++
+	open := func(name string) {
+		for m.tcur = 0; m.tcur < len(m.trows) && m.trows[m.tcur].rel != name; m.tcur++ {
+		}
+		press(m, "enter")
 	}
-	press(m, "enter")
-	if m.reading == nil || !strings.Contains(m.View(), "   1 │ row") {
+
+	open("a.txt")
+	if m.reading == nil || !strings.Contains(m.View(), "   1 │ row 1") {
 		t.Fatalf("enter should open a.txt:\n%s", m.View())
 	}
 	press(m, "G")
-	if !strings.Contains(m.View(), " 100 │ row") {
-		t.Fatalf("G should scroll to the last line:\n%s", m.View())
+	if v := m.View(); !strings.Contains(v, " 101 │ xxx") || !strings.Contains(v, "     │ xxx") {
+		t.Fatalf("G should show the last line, wrapped:\n%s", v)
+	}
+	press(m, "g", "/", "row 50", "enter")
+	if v := m.View(); !strings.Contains(v, "  50 │ row 50") || !strings.Contains(v, "/row 50 1/1") {
+		t.Fatalf("search should jump to row 50:\n%s", v)
 	}
 	press(m, "esc")
 	if m.reading != nil {
 		t.Fatal("esc should close the reader")
+	}
+
+	open("m.go")
+	if segs := m.reading.segs[2]; len(segs) < 3 {
+		t.Fatalf("m.go should be split into highlighted tokens, got %d", len(segs))
+	}
+	press(m, "esc", "/", "ROW 7", "enter")
+	if m.mode != modePick || !strings.Contains(m.View(), "a.txt:7  row 7") {
+		t.Fatalf("search all should list a.txt:7:\n%s", m.View())
+	}
+	press(m, "down", "enter") // second hit: row 70
+	if v := m.View(); m.reading == nil || !strings.Contains(v, "  70 │ row 70") || !strings.Contains(v, "2/11") {
+		t.Fatalf("enter should open a.txt at row 70:\n%s", v)
 	}
 }

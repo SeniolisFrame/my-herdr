@@ -16,4 +16,6 @@ var thaiKeys = map[string]string{
 	// Kedmanee Shift+X / Shift+Z type plain parentheses, so on the English
 	// layout "(" and ")" also trigger Z and X.
 	")": "X", "(": "Z",
+	// Search: / and Shift+N.
+	"ฝ": "/", "์": "N",
 }
