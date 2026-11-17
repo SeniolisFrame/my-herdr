@@ -1,9 +1,8 @@
-package main
+package ui
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
+	"herdr-explorer/internal/git"
 	"path"
 	"strconv"
 	"strings"
@@ -37,8 +36,8 @@ type reader struct {
 	rel     string  // the file (for s, b, L)
 	back    *reader // esc returns here (a commit opened from the file's history)
 	blame   []string
-	f       *fileDiff
-	lines   []diffLine // the file's lines (no '@' header)
+	f       *git.FileDiff
+	lines   []git.Line // the file's lines (no '@' header)
 	segs    [][]seg    // highlighted, per source line
 	rows    []rrow     // wrapped to width
 	width   int
@@ -49,9 +48,9 @@ type reader struct {
 }
 
 func (m *model) openReader(rel string) tea.Cmd {
-	f := untrackedDiff(m.root, rel)
-	r := &reader{rel: rel, f: f, lines: f.lines}
-	if len(r.lines) > 0 && r.lines[0].kind == '@' {
+	f := git.ReadFile(m.root, rel)
+	r := &reader{rel: rel, f: f, lines: f.Lines}
+	if len(r.lines) > 0 && r.lines[0].Kind == '@' {
 		r.lines = r.lines[1:]
 	}
 	r.segs = highlight(rel, r.lines)
@@ -61,10 +60,10 @@ func (m *model) openReader(rel string) tea.Cmd {
 
 // highlight colours the whole file at once so multi-line comments and
 // strings stay right, then splits the tokens back into lines.
-func highlight(name string, lines []diffLine) [][]seg {
+func highlight(name string, lines []git.Line) [][]seg {
 	text := make([]string, len(lines))
 	for i, l := range lines {
-		text[i] = strings.ReplaceAll(l.text, "\t", "    ")
+		text[i] = strings.ReplaceAll(l.Text, "\t", "    ")
 	}
 	src := strings.Join(text, "\n")
 	out := make([][]seg, len(lines))
@@ -207,7 +206,7 @@ func (r *reader) search(q string) {
 	r.query, r.matches, r.mcur = q, nil, -1
 	lq := strings.ToLower(q)
 	for i, l := range r.lines {
-		if q != "" && strings.Contains(strings.ToLower(l.text), lq) {
+		if q != "" && strings.Contains(strings.ToLower(l.Text), lq) {
 			r.matches = append(r.matches, i)
 		}
 	}
@@ -252,10 +251,10 @@ var (
 func (m *model) readerLines(h int) []string {
 	r := m.reading
 	switch {
-	case r.f.binary:
+	case r.f.Binary:
 		return []string{sDim.Render(" binary file")}
-	case r.f.note != "" && len(r.lines) == 0:
-		return []string{sDim.Render(" " + r.f.note)}
+	case r.f.Note != "" && len(r.lines) == 0:
+		return []string{sDim.Render(" " + r.f.Note)}
 	}
 	r.layout(m.width)
 	hit := map[int]bool{}
@@ -312,7 +311,7 @@ func (m *model) searchAll() tea.Cmd {
 		if !m.isGit {
 			where = "--no-index"
 		}
-		out, _ := git(m.root, "grep", where, "-n", "-I", "-i", "-F", "--no-color", "-e", q)
+		out, _ := git.Out(m.root, "grep", where, "-n", "-I", "-i", "-F", "--no-color", "-e", q)
 		var hits, choices []string
 		for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 			if p := strings.SplitN(l, ":", 3); len(p) == 3 && len(hits) < 500 {
@@ -340,15 +339,4 @@ func (m *model) searchAll() tea.Cmd {
 		})
 		return zoomCmd(true)
 	})
-}
-
-// zoomCmd zooms this herdr pane in or out; outside herdr it does nothing.
-func zoomCmd(on bool) tea.Cmd {
-	return func() tea.Msg {
-		if pane := os.Getenv("HERDR_PANE_ID"); pane != "" {
-			flag := map[bool]string{true: "--on", false: "--off"}[on]
-			_ = exec.Command(herdrBin(), "pane", "zoom", "--pane", pane, flag).Run()
-		}
-		return nil
-	}
 }

@@ -1,6 +1,7 @@
-package main
+package ui
 
 import (
+	"herdr-explorer/internal/git"
 	"strconv"
 	"strings"
 	"time"
@@ -30,9 +31,9 @@ func (m *model) toggleBlame() {
 		r.blame = nil
 		return
 	}
-	out, err := git(m.root, "blame", "--line-porcelain", "--", r.rel)
+	out, err := git.Out(m.root, "blame", "--line-porcelain", "--", r.rel)
 	if err != nil {
-		m.flash, m.flashOK, m.flashAt = gitErr(out, err).Error(), false, time.Now()
+		m.flash, m.flashOK, m.flashAt = git.Err(out, err).Error(), false, time.Now()
 		return
 	}
 	r.blame = parseBlame(out)
@@ -52,7 +53,7 @@ func parseBlame(out string) []string {
 			sec, _ := strconv.ParseInt(l[len("author-time "):], 10, 64)
 			date = time.Unix(sec, 0).Format("2006-01-02")
 		default:
-			if f := strings.Fields(l); len(f) >= 3 && len(f[0]) == 40 && hashRe.MatchString(f[0]) {
+			if f := strings.Fields(l); len(f) >= 3 && len(f[0]) == 40 && git.HashRe.MatchString(f[0]) {
 				hash = f[0][:7]
 			}
 		}
@@ -77,7 +78,7 @@ func (m *model) fileHistory() tea.Cmd {
 	if r.back != nil {
 		return nil
 	}
-	out, err := git(m.root, "log", "--follow", "-n", "300", "--date=short",
+	out, err := git.Out(m.root, "log", "--follow", "-n", "300", "--date=short",
 		"--format=%h %ad %an  %s", "--", r.rel)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if err != nil || lines[0] == "" {
@@ -86,10 +87,10 @@ func (m *model) fileHistory() tea.Cmd {
 	}
 	return m.pick("history of "+r.rel, lines, 0, func(i int) tea.Cmd {
 		hash := strings.Fields(lines[i])[0]
-		text, err := git(m.root, "log", "-1", "-p", "-M", "--follow", "--no-color", "--no-ext-diff",
+		text, err := git.Out(m.root, "log", "-1", "-p", "-M", "--follow", "--no-color", "--no-ext-diff",
 			"--date=iso", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%w(0,4,4)%B", hash, "--", r.rel)
 		if err != nil {
-			m.flash, m.flashOK, m.flashAt = gitErr(text, err).Error(), false, time.Now()
+			m.flash, m.flashOK, m.flashAt = git.Err(text, err).Error(), false, time.Now()
 			return nil
 		}
 		m.reading = textReader(r.rel, r.rel+" @ "+hash, text, r)
@@ -99,11 +100,11 @@ func (m *model) fileHistory() tea.Cmd {
 
 // textReader shows text (a commit's diff) in the reader; esc returns to back.
 func textReader(rel, title, text string, back *reader) *reader {
-	f := &fileDiff{path: title}
+	f := &git.FileDiff{Path: title}
 	for i, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-		f.lines = append(f.lines, diffLine{kind: '+', text: strings.TrimSuffix(l, "\r"), newNo: i + 1})
+		f.Lines = append(f.Lines, git.Line{Kind: '+', Text: strings.TrimSuffix(l, "\r"), NewNo: i + 1})
 	}
-	r := &reader{rel: rel, back: back, f: f, lines: f.lines}
+	r := &reader{rel: rel, back: back, f: f, lines: f.Lines}
 	r.segs = highlight("commit.diff", r.lines)
 	return r
 }

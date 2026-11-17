@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"herdr-explorer/internal/git"
+	"herdr-explorer/internal/herdr"
+	"herdr-explorer/internal/ui"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +19,7 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "auto" {
-		os.Exit(autoOpen())
+		os.Exit(herdr.AutoOpen())
 	}
 
 	viewFlag := flag.String("view", "files", "initial view: files or diff")
@@ -24,19 +27,12 @@ func main() {
 	iconsFlag := flag.String("icons", envOr("HERDR_EXPLORER_ICONS", "emoji"), "icon set: emoji or none")
 	flag.Parse()
 
-	m := newModel(resolveRoot(*rootFlag), *viewFlag == "diff", *iconsFlag)
+	m := ui.New(resolveRoot(*rootFlag), *viewFlag == "diff", *iconsFlag)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 // resolveRoot picks the folder to show: --root, $HERDR_EXPLORER_ROOT, a
@@ -47,21 +43,21 @@ func resolveRoot(flagRoot string) string {
 	cands = append(cands, flagRoot, os.Getenv("HERDR_EXPLORER_ROOT"))
 	cands = append(cands, contextDirs(os.Getenv("HERDR_PLUGIN_CONTEXT_JSON"))...)
 	pluginRoot := os.Getenv("HERDR_PLUGIN_ROOT")
-	if wd, err := os.Getwd(); err == nil && (pluginRoot == "" || !samePath(wd, pluginRoot)) {
+	if wd, err := os.Getwd(); err == nil && (pluginRoot == "" || !herdr.SamePath(wd, pluginRoot)) {
 		cands = append(cands, wd)
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		cands = append(cands, home)
 	}
 	for _, c := range cands {
-		if c == "" || !isDir(c) {
+		if c == "" || !herdr.IsDir(c) {
 			continue
 		}
 		abs, err := filepath.Abs(c)
 		if err != nil {
 			continue
 		}
-		if top := gitTopLevel(abs); top != "" {
+		if top := git.TopLevel(abs); top != "" {
 			return top
 		}
 		return abs
@@ -102,7 +98,7 @@ func contextDirs(raw string) []string {
 				walk(key, e)
 			}
 		case string:
-			if t == "" || !isDir(t) || (pluginRoot != "" && samePath(t, pluginRoot)) {
+			if t == "" || !herdr.IsDir(t) || (pluginRoot != "" && herdr.SamePath(t, pluginRoot)) {
 				return
 			}
 			score := 3
@@ -126,13 +122,9 @@ func contextDirs(raw string) []string {
 	return out
 }
 
-func isDir(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && fi.IsDir()
-}
-
-func samePath(a, b string) bool {
-	a, _ = filepath.Abs(a)
-	b, _ = filepath.Abs(b)
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

@@ -1,7 +1,9 @@
-package main
+package ui
 
 import (
 	"fmt"
+	"herdr-explorer/internal/git"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,7 +108,7 @@ func (m *model) repoKey(k string) (tea.Cmd, bool) {
 	case "?":
 		m.help = !m.help
 	case "b": // checkout
-		local, remote := gitBranches(root)
+		local, remote := git.Branches(root)
 		var choices []string
 		isRemote := map[string]bool{}
 		for _, b := range local {
@@ -115,7 +117,7 @@ func (m *model) repoKey(k string) (tea.Cmd, bool) {
 			}
 		}
 		for _, r := range remote {
-			if !contains(local, r[strings.IndexByte(r, '/')+1:]) {
+			if !slices.Contains(local, r[strings.IndexByte(r, '/')+1:]) {
 				choices = append(choices, r)
 				isRemote[r] = true
 			}
@@ -123,7 +125,7 @@ func (m *model) repoKey(k string) (tea.Cmd, bool) {
 		return m.pick("Checkout branch", choices, 0, func(i int) tea.Cmd {
 			b := choices[i]
 			return m.op("checking out "+b, func() (string, error) {
-				return "on " + b, gitSwitch(root, b, isRemote[b])
+				return "on " + b, git.Switch(root, b, isRemote[b])
 			})
 		}), true
 	case "B": // new branch
@@ -132,11 +134,11 @@ func (m *model) repoKey(k string) (tea.Cmd, bool) {
 				return nil
 			}
 			return m.op("creating "+name, func() (string, error) {
-				return "created " + name, gitRun(root, "switch", "-c", name)
+				return "created " + name, git.Run(root, "switch", "-c", name)
 			})
 		}), true
 	case "m": // merge
-		local, remote := gitBranches(root)
+		local, remote := git.Branches(root)
 		var choices []string
 		for _, b := range append(local, remote...) {
 			if b != m.branch {
@@ -145,25 +147,25 @@ func (m *model) repoKey(k string) (tea.Cmd, bool) {
 		}
 		return m.pick("Merge into "+m.branch, choices, 0, func(i int) tea.Cmd {
 			b := choices[i]
-			return m.op("merging "+b, func() (string, error) { return "merged " + b, gitMerge(root, b) })
+			return m.op("merging "+b, func() (string, error) { return "merged " + b, git.Merge(root, b) })
 		}), true
 	case "X": // abort merge
 		if !m.merging {
 			return nil, true
 		}
 		return m.confirm("Abort the merge and drop its changes?", "Abort merge", func() tea.Cmd {
-			return m.op("aborting merge", func() (string, error) { return "merge aborted", gitRun(root, "merge", "--abort") })
+			return m.op("aborting merge", func() (string, error) { return "merge aborted", git.Run(root, "merge", "--abort") })
 		}), true
 	case "f":
-		return m.op("fetching", func() (string, error) { return "fetched", gitRun(root, "fetch", "--all", "--prune") }), true
+		return m.op("fetching", func() (string, error) { return "fetched", git.Run(root, "fetch", "--all", "--prune") }), true
 	case "F":
-		return m.op("pulling", func() (string, error) { return "pulled", gitPull(root) }), true
+		return m.op("pulling", func() (string, error) { return "pulled", git.Pull(root) }), true
 	case "P":
-		return m.op("pushing", func() (string, error) { return "pushed", gitPush(root) }), true
+		return m.op("pushing", func() (string, error) { return "pushed", git.Push(root) }), true
 	case "z":
-		return m.op("stashing", func() (string, error) { return "stashed", gitRun(root, "stash", "push", "-u") }), true
+		return m.op("stashing", func() (string, error) { return "stashed", git.Run(root, "stash", "push", "-u") }), true
 	case "Z":
-		return m.op("popping stash", func() (string, error) { return "stash popped", gitStashPop(root) }), true
+		return m.op("popping stash", func() (string, error) { return "stash popped", git.StashPop(root) }), true
 	default:
 		return nil, false
 	}
@@ -173,38 +175,38 @@ func (m *model) repoKey(k string) (tea.Cmd, bool) {
 // changesKey handles the Changes-pane actions on the file under the cursor.
 func (m *model) changesKey(k string) (tea.Cmd, bool) {
 	root := m.root
-	var f *fileDiff
+	var f *git.FileDiff
 	if m.dcur < len(m.drows) {
 		f = m.diffs[m.drows[m.dcur].file]
 	}
 	paths := func() []string {
-		if f.oldPath != "" {
-			return []string{f.path, f.oldPath}
+		if f.OldPath != "" {
+			return []string{f.Path, f.OldPath}
 		}
-		return []string{f.path}
+		return []string{f.Path}
 	}
 	switch k {
 	case " ":
 		if f == nil {
 			return nil, true
 		}
-		if line := m.drows[m.dcur].line; line >= 0 && f.status == "M" {
+		if line := m.drows[m.dcur].line; line >= 0 && f.Status == "M" {
 			n := -1 // which hunk the cursor is in
-			for _, l := range f.lines[:line+1] {
-				if l.kind == '@' {
+			for _, l := range f.Lines[:line+1] {
+				if l.Kind == '@' {
 					n++
 				}
 			}
-			path := f.path
-			return m.op("staging hunk", func() (string, error) { return gitToggleHunk(root, path, n) }), true
+			path := f.Path
+			return m.op("staging hunk", func() (string, error) { return git.ToggleHunk(root, path, n) }), true
 		}
-		stage := m.staged[f.path] != "full"
+		stage := m.staged[f.Path] != "full"
 		verb := map[bool]string{true: "staged ", false: "unstaged "}[stage]
-		return m.op("staging", func() (string, error) { return verb + f.path, setStaged(root, stage, paths()...) }), true
+		return m.op("staging", func() (string, error) { return verb + f.Path, git.SetStaged(root, stage, paths()...) }), true
 	case "S":
-		return m.op("staging all", func() (string, error) { return "staged all", setStaged(root, true, ".") }), true
+		return m.op("staging all", func() (string, error) { return "staged all", git.SetStaged(root, true, ".") }), true
 	case "U":
-		return m.op("unstaging all", func() (string, error) { return "unstaged all", setStaged(root, false, ".") }), true
+		return m.op("unstaging all", func() (string, error) { return "unstaged all", git.SetStaged(root, false, ".") }), true
 	case "c":
 		if len(m.staged) == 0 && !m.merging {
 			m.flash, m.flashOK, m.flashAt = "nothing staged: space stages a file, S stages all", false, time.Now()
@@ -219,22 +221,22 @@ func (m *model) changesKey(k string) (tea.Cmd, bool) {
 				return nil
 			}
 			return m.op("committing", func() (string, error) {
-				h, err := gitCommit(root, msg)
+				h, err := git.Commit(root, msg)
 				return "committed " + h, err
 			})
 		}), true
 	case "O", "T":
-		if f == nil || f.status != "C" {
+		if f == nil || f.Status != "C" {
 			return nil, true
 		}
 		side := map[string]string{"O": "ours", "T": "theirs"}[k]
-		return m.op("resolving", func() (string, error) { return f.path + ": took " + side, gitResolve(root, f.path, side) }), true
+		return m.op("resolving", func() (string, error) { return f.Path + ": took " + side, git.Resolve(root, f.Path, side) }), true
 	case "D":
 		if f == nil {
 			return nil, true
 		}
-		return m.confirm("Discard all changes in "+f.path+"?", "Discard", func() tea.Cmd {
-			return m.op("discarding", func() (string, error) { return "discarded " + f.path, gitDiscard(root, f) })
+		return m.confirm("Discard all changes in "+f.Path+"?", "Discard", func() tea.Cmd {
+			return m.op("discarding", func() (string, error) { return "discarded " + f.Path, git.Discard(root, f) })
 		}), true
 	case "L":
 		return m.openLog(0), true
@@ -253,13 +255,13 @@ func (m *model) confirm(title, yes string, f func() tea.Cmd) tea.Cmd {
 }
 
 func (m *model) openLog(cur int) tea.Cmd {
-	lines := gitLog(m.root)
+	lines := git.Log(m.root)
 	return m.pick("History (all branches)", lines, cur, func(i int) tea.Cmd {
-		hash := logHash(lines[i])
+		hash := git.LogHash(lines[i])
 		if hash == "" {
 			return m.openLog(i) // a pure graph line: stay in the log
 		}
-		fs, err := gitShow(m.root, hash)
+		fs, err := git.Show(m.root, hash)
 		if err != nil {
 			m.flash, m.flashOK, m.flashAt = err.Error(), false, time.Now()
 			return m.openLog(i)
@@ -269,15 +271,6 @@ func (m *model) openLog(cur int) tea.Cmd {
 		m.rebuildDiffRows()
 		return nil
 	})
-}
-
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 var helpText = []string{

@@ -1,4 +1,4 @@
-package main
+package herdr
 
 import (
 	"encoding/json"
@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// autoOpen runs from the [[startup]] and [[events]] hooks: it makes sure the
+// AutoOpen runs from the [[startup]] and [[events]] hooks: it makes sure the
 // Files (left) and Changes (right) panes are open around the chat.
 // Create the file "no-auto" in the plugin config dir to turn this off.
-func autoOpen() int {
+func AutoOpen() int {
 	if dir := os.Getenv("HERDR_PLUGIN_CONFIG_DIR"); dir != "" {
 		if _, err := os.Stat(filepath.Join(dir, "no-auto")); err == nil {
 			return 0
@@ -62,7 +62,7 @@ type workspaceInfo struct {
 }
 
 func listWorkspaces() ([]workspaceInfo, error) {
-	out, err := exec.Command(herdrBin(), "workspace", "list").Output()
+	out, err := exec.Command(Bin(), "workspace", "list").Output()
 	if err != nil {
 		return nil, fmt.Errorf("herdr workspace list: %w", err)
 	}
@@ -134,12 +134,12 @@ func ensurePanes(ws, tab string) {
 	}
 	defer release()
 
-	panes, err := listPanes()
+	panes, err := ListPanes()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-	var chat *paneInfo
+	var chat *Pane
 	have := map[string]bool{}
 	for i := range panes {
 		p := &panes[i]
@@ -161,25 +161,25 @@ func ensurePanes(ws, tab string) {
 	// Changes first: split chat → [chat | Changes], Changes gets 30%.
 	if !have["Changes"] {
 		if id := openBeside(chat, "changes"); id != "" {
-			_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "right", "--amount", "0.2").Run()
+			_ = exec.Command(Bin(), "pane", "resize", "--pane", id, "--direction", "right", "--amount", "0.2").Run()
 			back, dir = id, "left"
 		}
 	}
 	// Files: split chat again, then swap it to the chat's left and narrow it.
 	if !have["Files"] {
 		if id := openBeside(chat, "files"); id != "" {
-			_ = exec.Command(herdrBin(), "pane", "swap", "--pane", id, "--direction", "left").Run()
-			_ = exec.Command(herdrBin(), "pane", "resize", "--pane", id, "--direction", "left", "--amount", "0.25").Run()
+			_ = exec.Command(Bin(), "pane", "swap", "--pane", id, "--direction", "left").Run()
+			_ = exec.Command(Bin(), "pane", "resize", "--pane", id, "--direction", "left", "--amount", "0.25").Run()
 			back, dir = id, "right"
 		}
 	}
 	if back != "" {
-		_ = exec.Command(herdrBin(), "pane", "focus", "--pane", back, "--direction", dir).Run()
+		_ = exec.Command(Bin(), "pane", "focus", "--pane", back, "--direction", dir).Run()
 	}
 }
 
 // openBeside opens an explorer entrypoint to the right of chat; returns its pane id.
-func openBeside(chat *paneInfo, entry string) string {
+func openBeside(chat *Pane, entry string) string {
 	args := []string{"plugin", "pane", "open",
 		"--plugin", envOr("HERDR_PLUGIN_ID", "herdr-explorer"), "--entrypoint", entry,
 		"--target-pane", chat.PaneID, "--direction", "right", "--no-focus",
@@ -187,7 +187,7 @@ func openBeside(chat *paneInfo, entry string) string {
 	if chat.Cwd != "" {
 		args = append(args, "--env", "HERDR_EXPLORER_ROOT="+chat.Cwd)
 	}
-	out, err := exec.Command(herdrBin(), args...).Output()
+	out, err := exec.Command(Bin(), args...).Output()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pane open", entry+":", err)
 		return ""
@@ -195,7 +195,7 @@ func openBeside(chat *paneInfo, entry string) string {
 	var resp struct {
 		Result struct {
 			PluginPane struct {
-				Pane paneInfo `json:"pane"`
+				Pane Pane `json:"pane"`
 			} `json:"plugin_pane"`
 		} `json:"result"`
 	}

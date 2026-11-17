@@ -1,14 +1,14 @@
-package main
+// Package ui is the explorer pane: file tree, changes, reader.
+package ui
 
 import (
-	"fmt"
+	"herdr-explorer/internal/git"
+	"herdr-explorer/internal/herdr"
 	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 )
 
 type viewKind int
@@ -52,7 +52,7 @@ type model struct {
 	status        map[string]string
 	dirtyDirs     map[string]bool
 
-	diffs     []*fileDiff
+	diffs     []*git.FileDiff
 	collapsed map[string]bool
 	drows     []drow
 	dcur      int
@@ -61,7 +61,7 @@ type model struct {
 	loading bool
 	err     string
 
-	ctx     launchContext
+	ctx     herdr.Context
 	flash   string
 	flashAt time.Time
 	flashOK bool
@@ -95,7 +95,7 @@ type dataMsg struct {
 	status        map[string]string
 	staged        map[string]string
 	merging       bool
-	diffs         []*fileDiff
+	diffs         []*git.FileDiff
 	err           error
 	withDiff      bool
 	cwd, newRoot  string // chat pane's folder; set newRoot when that is another repo/folder
@@ -103,16 +103,21 @@ type dataMsg struct {
 
 type tickMsg struct{}
 
+// New is the explorer pane for root; startDiff opens the Changes view.
+func New(root string, startDiff bool, iconSet string) tea.Model {
+	return newModel(root, startDiff, iconSet)
+}
+
 func newModel(root string, startDiff bool, iconSet string) *model {
 	m := &model{
 		root:      root,
-		isGit:     gitTopLevel(root) != "",
+		isGit:     git.TopLevel(root) != "",
 		iconSet:   iconSet,
 		collapsed: map[string]bool{},
 		status:    map[string]string{},
 		staged:    map[string]string{},
 		dirtyDirs: map[string]bool{},
-		ctx:       readLaunchContext(),
+		ctx:       herdr.ReadContext(),
 	}
 	if startDiff {
 		m.view = viewDiff
@@ -137,20 +142,20 @@ func tick() tea.Cmd {
 func (m *model) loadCmd(withDiff bool) tea.Cmd {
 	root, isGit, last := m.root, m.isGit, m.chatCwd
 	return func() tea.Msg {
-		cwd := chatCwd()
+		cwd := herdr.ChatCwd()
 		if cwd != "" && cwd != last { // only a moved chat pane costs a git call
-			if r := rootOf(cwd); !samePath(r, root) {
+			if r := rootOf(cwd); !herdr.SamePath(r, root) {
 				return dataMsg{cwd: cwd, newRoot: r}
 			}
 		}
 		if !isGit {
 			return dataMsg{status: map[string]string{}, cwd: cwd}
 		}
-		d := dataMsg{branch: gitBranch(root), merging: gitMerging(root), withDiff: withDiff, cwd: cwd}
-		d.status, d.staged = gitStatus(root)
-		d.ahead, d.behind, d.hasUpstream = gitAheadBehind(root)
+		d := dataMsg{branch: git.Branch(root), merging: git.Merging(root), withDiff: withDiff, cwd: cwd}
+		d.status, d.staged = git.ReadStatus(root)
+		d.ahead, d.behind, d.hasUpstream = git.AheadBehind(root)
 		if withDiff {
-			d.diffs, d.err = loadDiffs(root)
+			d.diffs, d.err = git.LoadDiffs(root)
 		}
 		return d
 	}
@@ -227,7 +232,7 @@ func (m *model) currentRel() string {
 		return ""
 	}
 	if m.dcur < len(m.drows) {
-		return m.diffs[m.drows[m.dcur].file].path
+		return m.diffs[m.drows[m.dcur].file].Path
 	}
 	return ""
 }
@@ -239,7 +244,7 @@ func (m *model) sendCmd(rel string) tea.Cmd {
 	}
 	ctx, root := m.ctx, m.root
 	return func() tea.Msg {
-		s, err := sendToChat(ctx, root, rel)
+		s, err := herdr.SendToChat(ctx, root, rel)
 		if err != nil {
 			return flashMsg{text: "send failed: " + err.Error()}
 		}
@@ -285,7 +290,7 @@ func (m *model) applyData(d dataMsg) {
 	curPath, curLine := "", -1
 	if m.dcur < len(m.drows) {
 		r := m.drows[m.dcur]
-		curPath, curLine = m.diffs[r.file].path, r.line
+		curPath, curLine = m.diffs[r.file].Path, r.line
 	}
 	if !d.withDiff || m.mode == modeShow {
 		return
@@ -293,8 +298,8 @@ func (m *model) applyData(d dataMsg) {
 	if d.err == nil {
 		m.diffs = d.diffs
 		for _, f := range m.diffs {
-			if m.status[f.path] == "C" {
-				f.status = "C" // git diff shows conflicts as plain modifications
+			if m.status[f.Path] == "C" {
+				f.Status = "C" // git diff shows conflicts as plain modifications
 			}
 		}
 	}
@@ -302,7 +307,7 @@ func (m *model) applyData(d dataMsg) {
 	if curPath != "" {
 		header := -1
 		for i, r := range m.drows {
-			if m.diffs[r.file].path != curPath {
+			if m.diffs[r.file].Path != curPath {
 				continue
 			}
 			if r.line == -1 {
@@ -321,11 +326,11 @@ func (m *model) applyData(d dataMsg) {
 	m.clamp()
 }
 
-func (m *model) isCollapsed(f *fileDiff) bool {
-	if v, ok := m.collapsed[f.path]; ok {
+func (m *model) isCollapsed(f *git.FileDiff) bool {
+	if v, ok := m.collapsed[f.Path]; ok {
 		return v
 	}
-	return len(f.lines) > autoCollapseLines
+	return len(f.Lines) > autoCollapseLines
 }
 
 func (m *model) rebuildDiffRows() {
@@ -335,11 +340,11 @@ func (m *model) rebuildDiffRows() {
 		if m.isCollapsed(f) {
 			continue
 		}
-		if f.binary || len(f.lines) == 0 {
+		if f.Binary || len(f.Lines) == 0 {
 			m.drows = append(m.drows, drow{file: i, line: -2})
 			continue
 		}
-		for j := range f.lines {
+		for j := range f.Lines {
 			m.drows = append(m.drows, drow{file: i, line: j})
 		}
 	}
@@ -494,7 +499,7 @@ func (m *model) handleKey(k string) tea.Cmd {
 			file = m.drows[m.dcur].file
 		}
 		for _, f := range m.diffs {
-			m.collapsed[f.path] = anyOpen
+			m.collapsed[f.Path] = anyOpen
 		}
 		m.rebuildDiffRows()
 		m.dcur = m.headerRow(file)
@@ -513,7 +518,7 @@ func (m *model) toggleDir(n *node) {
 
 func (m *model) toggleFile(fi int) {
 	f := m.diffs[fi]
-	m.collapsed[f.path] = !m.isCollapsed(f)
+	m.collapsed[f.Path] = !m.isCollapsed(f)
 	m.rebuildDiffRows()
 	m.dcur = m.headerRow(fi)
 	m.clamp()
@@ -591,314 +596,4 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.clamp()
 	}
 	return nil
-}
-
-// ---------- view ----------
-
-var (
-	cAccent  = lipgloss.Color("#58a6ff")
-	cDim     = lipgloss.Color("#8b949e")
-	cAdd     = lipgloss.Color("#3fb950")
-	cDel     = lipgloss.Color("#f85149")
-	cMod     = lipgloss.Color("#d29922")
-	cRen     = lipgloss.Color("#a371f7")
-	cBranch  = lipgloss.Color("#f0883e")
-	sDim     = lipgloss.NewStyle().Foreground(cDim)
-	sAdd     = lipgloss.NewStyle().Foreground(cAdd)
-	sDel     = lipgloss.NewStyle().Foreground(cDel)
-	sHunk    = lipgloss.NewStyle().Foreground(cAccent).Faint(true)
-	sCursor  = lipgloss.NewStyle().Foreground(cAccent)
-	sTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0d1117")).Background(cAccent).Padding(0, 1)
-	sErr     = lipgloss.NewStyle().Foreground(cDel)
-	sBranch  = lipgloss.NewStyle().Foreground(lipgloss.Color("#0d1117")).Background(cBranch).Bold(true).Padding(0, 1)
-	sSelName = lipgloss.NewStyle().Reverse(true)
-	sGuide   = lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261"))
-	sMerging = lipgloss.NewStyle().Foreground(lipgloss.Color("#0d1117")).Background(cDel).Bold(true).Padding(0, 1)
-)
-
-func statusColor(code string) lipgloss.Color {
-	switch code {
-	case "A", "U":
-		return cAdd
-	case "D", "C":
-		return cDel
-	case "R":
-		return cRen
-	default:
-		return cMod
-	}
-}
-
-// title names the pane; each explorer pane shows one fixed view.
-func (m *model) title() string {
-	t := "Files"
-	if m.view == viewDiff {
-		t = "Changes"
-		if n := len(m.status); n > 0 {
-			t += fmt.Sprintf(" %d", n)
-		}
-		t += countStaged(m.staged)
-		if m.mode == modeShow {
-			t = m.showTitle + " (esc back)"
-		}
-	}
-	if m.reading != nil {
-		t = m.reading.f.path
-	}
-	if m.iconSet == "emoji" && m.reading != nil {
-		t = "📄 " + t
-	} else if m.iconSet == "emoji" {
-		t = map[viewKind]string{viewFiles: "📁 ", viewDiff: "🔀 "}[m.view] + t
-	}
-	return sTitle.Render(t)
-}
-
-// branchBar is its own row so the branch stays readable in a narrow pane.
-func (m *model) branchBar() string {
-	repo := sDim.Render(" " + filepath.Base(m.root))
-	if m.branch == "" {
-		if !m.isGit {
-			return sDim.Render(" (no git)") + repo
-		}
-		return repo
-	}
-	br := m.branch
-	if m.iconSet == "emoji" {
-		br = "🌿 " + br
-	}
-	s := sBranch.Render(br)
-	if m.hasUpstream && (m.ahead > 0 || m.behind > 0) {
-		s += " " + sDim.Render(fmt.Sprintf("↑%d ↓%d", m.ahead, m.behind))
-	}
-	if m.merging {
-		s += " " + sMerging.Render("MERGING")
-	}
-	return s + repo
-}
-
-func (m *model) footer() string {
-	if m.mode == modeInput {
-		return m.inputLine()
-	}
-	if m.flash != "" && time.Since(m.flashAt) < 4*time.Second {
-		if m.flashOK {
-			return sAdd.Render(m.flash)
-		}
-		return sErr.Render(m.flash)
-	}
-	if m.err != "" {
-		return sErr.Render(m.err)
-	}
-	if m.reading != nil {
-		return m.readerFooter()
-	}
-	if m.view == viewFiles {
-		return sDim.Render("⏎ open  s send  esc chat  ? help")
-	}
-	if m.mode == modePick {
-		return sDim.Render("⏎ choose  esc back")
-	}
-	if m.mode == modeShow {
-		return sDim.Render("⏎ fold  n/p file  esc back to history")
-	}
-	return sDim.Render("␣ stage  c commit  L history  ? help")
-}
-
-func (m *model) View() string {
-	if m.width == 0 {
-		return ""
-	}
-	h := m.contentHeight()
-	var lines []string
-	switch {
-	case m.help:
-		lines = helpText
-	case m.mode == modePick:
-		lines = m.pickLines(h)
-	case m.reading != nil:
-		lines = m.readerLines(h)
-	case m.view == viewFiles:
-		lines = m.treeLines(h)
-	default:
-		lines = m.diffLines(h)
-	}
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-	for len(lines) < h {
-		lines = append(lines, "")
-	}
-	out := make([]string, 0, h+2)
-	out = append(out, m.title(), m.branchBar())
-	out = append(out, lines...)
-	out = append(out, m.footer())
-	for i, l := range out {
-		out[i] = ansi.Truncate(l, m.width, "…")
-	}
-	return strings.Join(out, "\n")
-}
-
-func cursorMark(sel bool) string {
-	if sel {
-		return sCursor.Render("▌")
-	}
-	return " "
-}
-
-func (m *model) fileIconStr(name string) string {
-	if m.iconSet != "emoji" {
-		return ""
-	}
-	return emojiFile(name) + " "
-}
-
-func (m *model) dirIconStr(name string, open bool) string {
-	if m.iconSet != "emoji" {
-		return ""
-	}
-	return emojiDir(name, open) + " "
-}
-
-// indentGuides draws "│ " for each ancestor level, like an editor sidebar.
-func indentGuides(depth int) string {
-	if depth <= 0 {
-		return ""
-	}
-	return sGuide.Render(strings.Repeat("│ ", depth))
-}
-
-func (m *model) treeLines(h int) []string {
-	if len(m.trows) == 0 {
-		msg := "(empty folder)"
-		if m.tree.err != "" {
-			msg = m.tree.err
-		}
-		return []string{sDim.Render("  " + msg)}
-	}
-	var out []string
-	for i := m.toff; i < len(m.trows) && len(out) < h; i++ {
-		n := m.trows[i]
-		sel := i == m.tcur
-		var b strings.Builder
-		b.WriteString(cursorMark(sel))
-		b.WriteString(indentGuides(n.depth))
-		nameStyle := lipgloss.NewStyle()
-		badge := ""
-		if n.isDir {
-			arrow := "▸ "
-			if n.open {
-				arrow = "▾ "
-			}
-			b.WriteString(sDim.Render(arrow))
-			b.WriteString(m.dirIconStr(n.name, n.open))
-			if m.dirtyDirs[n.rel] {
-				nameStyle = nameStyle.Foreground(cMod)
-				badge = " " + lipgloss.NewStyle().Foreground(cMod).Render("●")
-			}
-		} else {
-			b.WriteString("  ")
-			b.WriteString(m.fileIconStr(n.name))
-			if code, ok := m.status[n.rel]; ok {
-				c := statusColor(code)
-				nameStyle = nameStyle.Foreground(c)
-				badge = " " + lipgloss.NewStyle().Foreground(c).Bold(true).Render(code)
-			}
-		}
-		if sel {
-			nameStyle = nameStyle.Inherit(sSelName)
-		}
-		b.WriteString(nameStyle.Render(n.name))
-		b.WriteString(badge)
-		out = append(out, b.String())
-	}
-	return out
-}
-
-func (m *model) diffLines(h int) []string {
-	if !m.isGit {
-		return []string{sDim.Render("  not a git repository")}
-	}
-	if len(m.drows) == 0 {
-		if m.loading {
-			return []string{sDim.Render("  loading…")}
-		}
-		return []string{sDim.Render("  no changes — working tree clean")}
-	}
-	var out []string
-	for i := m.doff; i < len(m.drows) && len(out) < h; i++ {
-		r := m.drows[i]
-		f := m.diffs[r.file]
-		sel := i == m.dcur
-		switch r.line {
-		case -1:
-			out = append(out, cursorMark(sel)+m.fileHeader(f, sel))
-		case -2:
-			msg := f.note
-			if f.binary {
-				msg = "binary file"
-			}
-			if msg == "" {
-				msg = "no content changes (mode/rename only)"
-			}
-			out = append(out, cursorMark(sel)+"    "+sDim.Render(msg))
-		default:
-			out = append(out, cursorMark(sel)+m.diffLine(f.lines[r.line]))
-		}
-	}
-	return out
-}
-
-func (m *model) fileHeader(f *fileDiff, sel bool) string {
-	arrow := "▾ "
-	if m.isCollapsed(f) {
-		arrow = "▸ "
-	}
-	c := statusColor(f.status)
-	name := f.path
-	if f.oldPath != "" && f.oldPath != f.path {
-		name = f.oldPath + " → " + f.path
-	}
-	ns := lipgloss.NewStyle().Bold(true)
-	if sel {
-		ns = ns.Inherit(sSelName)
-	}
-	mark := ""
-	if m.mode != modeShow {
-		mark = stagedMark(m.staged[f.path])
-	}
-	s := sDim.Render(arrow) + mark +
-		lipgloss.NewStyle().Foreground(c).Bold(true).Render(f.status) + " " +
-		m.fileIconStr(filepath.Base(f.path)) +
-		ns.Render(name)
-	if f.adds > 0 {
-		s += " " + sAdd.Render(fmt.Sprintf("+%d", f.adds))
-	}
-	if f.dels > 0 {
-		s += " " + sDel.Render(fmt.Sprintf("-%d", f.dels))
-	}
-	return s
-}
-
-func lineNo(n int) string {
-	if n == 0 {
-		return "    "
-	}
-	return fmt.Sprintf("%4d", n)
-}
-
-func (m *model) diffLine(l diffLine) string {
-	text := strings.ReplaceAll(l.text, "\t", "    ")
-	gutter := sDim.Render(lineNo(l.oldNo) + " " + lineNo(l.newNo) + " │")
-	switch l.kind {
-	case '@':
-		return " " + stagedMark(l.staged) + sHunk.Render(text)
-	case '+':
-		return "   " + gutter + sAdd.Render("+"+text)
-	case '-':
-		return "   " + gutter + sDel.Render("-"+text)
-	case '\\':
-		return "   " + gutter + sDim.Render(text)
-	default:
-		return "   " + gutter + " " + text
-	}
 }

@@ -1,4 +1,4 @@
-package main
+package ui
 
 // thaiKeys maps what the Thai Kedmanee layout types to the Latin key in the
 // same position, so the explorer's shortcuts work without switching layout.

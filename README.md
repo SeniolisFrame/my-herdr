@@ -11,6 +11,15 @@ go build -o bin/herdr-explorer.exe .
 herdr plugin link <path-to-this-folder>
 ```
 
+## Code
+
+| Path | What |
+| --- | --- |
+| `main.go` | flags, picks the folder, runs the pane (`auto` = open the panes) |
+| `internal/git` | git commands: status, diff parsing, stage/commit, branches, merge, log |
+| `internal/herdr` | herdr CLI: pane layout on new tabs, focus, zoom, sending `@path` |
+| `internal/ui` | the bubbletea pane: model + keys, view, reader, blame/history, tree |
+
 ## Layout & keys
 
 Each tab opens as `Files | chat | Changes` automatically.

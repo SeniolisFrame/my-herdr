@@ -1,7 +1,8 @@
-package main
+package ui
 
 import (
 	"fmt"
+	"herdr-explorer/internal/git"
 	"strings"
 	"testing"
 
@@ -51,8 +52,8 @@ func press(m *model, keys ...string) {
 func TestUIFlow(t *testing.T) {
 	r := newRepo(t)
 	write(t, r, "a.txt", "one\n")
-	must(t, setStaged(r, true, "a.txt"))
-	_, err := gitCommit(r, "init")
+	must(t, git.SetStaged(r, true, "a.txt"))
+	_, err := git.Commit(r, "init")
 	must(t, err)
 
 	m := newModel(r, true, "none")
@@ -74,7 +75,7 @@ func TestUIFlow(t *testing.T) {
 		t.Fatal("c should open the commit message box")
 	}
 	press(m, "แก้", " ", "bug", "enter")
-	if out, _ := git(r, "log", "-1", "--format=%s"); strings.TrimSpace(out) != "แก้ bug" {
+	if out, _ := git.Out(r, "log", "-1", "--format=%s"); strings.TrimSpace(out) != "แก้ bug" {
 		t.Fatalf("commit message: %q (flash %q)", out, m.flash)
 	}
 
@@ -94,8 +95,8 @@ func TestUIFlow(t *testing.T) {
 	// New branch with a conflicting change, merge it from main via the picker.
 	press(m, "B", "feature", "enter")
 	write(t, r, "a.txt", "feature\n")
-	must(t, setStaged(r, true, "a.txt"))
-	_, err = gitCommit(r, "feature")
+	must(t, git.SetStaged(r, true, "a.txt"))
+	_, err = git.Commit(r, "feature")
 	must(t, err)
 	press(m, "b")
 	if m.mode != modePick || !strings.Contains(m.View(), "main") {
@@ -103,13 +104,13 @@ func TestUIFlow(t *testing.T) {
 	}
 	press(m, "enter") // the only other branch: main
 	write(t, r, "a.txt", "main\n")
-	must(t, setStaged(r, true, "a.txt"))
-	_, err = gitCommit(r, "main side")
+	must(t, git.SetStaged(r, true, "a.txt"))
+	_, err = git.Commit(r, "main side")
 	must(t, err)
 	drain(m, m.loadCmd(true))
 
 	press(m, "m", "enter") // merge feature
-	if !m.merging || m.status["a.txt"] != "C" || m.flash != errConflicts.Error() {
+	if !m.merging || m.status["a.txt"] != "C" || m.flash != git.ErrConflicts.Error() {
 		t.Fatalf("want a conflict: merging=%v status=%v flash=%q", m.merging, m.status, m.flash)
 	}
 	if !strings.Contains(m.View(), "MERGING") {
@@ -203,12 +204,12 @@ func TestFollow(t *testing.T) {
 func TestBlameHistory(t *testing.T) {
 	r := newRepo(t)
 	write(t, r, "a.txt", "first\n")
-	must(t, setStaged(r, true, "a.txt"))
-	_, err := gitCommit(r, "one")
+	must(t, git.SetStaged(r, true, "a.txt"))
+	_, err := git.Commit(r, "one")
 	must(t, err)
 	write(t, r, "a.txt", "first\nsecond\n")
-	must(t, setStaged(r, true, "a.txt"))
-	h2, err := gitCommit(r, "two")
+	must(t, git.SetStaged(r, true, "a.txt"))
+	h2, err := git.Commit(r, "two")
 	must(t, err)
 	write(t, r, "a.txt", "first\nsecond\nthird\n")
 
