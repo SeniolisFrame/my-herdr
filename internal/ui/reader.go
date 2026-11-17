@@ -174,6 +174,10 @@ func (m *model) readerKey(k string) tea.Cmd {
 		return m.fileHistory()
 	case "s":
 		return m.sendCmd(r.rel)
+	case "e":
+		if r.back == nil { // not a commit diff
+			return m.editCmd()
+		}
 	case "/":
 		return m.ask("search file", func(q string) tea.Cmd {
 			r.search(q)
@@ -292,7 +296,7 @@ func (m *model) readerLines(h int) []string {
 func (m *model) readerFooter() string {
 	r := m.reading
 	if r.query == "" {
-		return sDim.Render("/ search  b blame  L history  s send  esc close")
+		return sDim.Render("e edit  / search  b blame  L history  esc close")
 	}
 	if len(r.matches) == 0 {
 		return sErr.Render("no match: " + r.query)

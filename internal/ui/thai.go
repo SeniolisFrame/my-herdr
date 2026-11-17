@@ -18,4 +18,6 @@ var thaiKeys = map[string]string{
 	")": "X", "(": "Z",
 	// Search: / and Shift+N.
 	"ฝ": "/", "์": "N",
+	// Edit the open file.
+	"ำ": "e",
 }

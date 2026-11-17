@@ -278,6 +278,30 @@ func TestChangesPathCut(t *testing.T) {
 	}
 }
 
+// TestEdit: e picks $EDITOR; after the editor exits the reader shows the new
+// text with the same line on top.
+func TestEdit(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "myed -w")
+	if ed := editor(); strings.Join(ed, " ") != "myed -w" {
+		t.Fatalf("editor() = %v", ed)
+	}
+	r := newRepo(t)
+	var b strings.Builder
+	for i := 1; i <= 50; i++ {
+		fmt.Fprintf(&b, "row %d\n", i)
+	}
+	write(t, r, "a.txt", b.String())
+	m := newModel(r, false, "none")
+	m.width, m.height = 60, 10
+	m.openReader("a.txt")
+	write(t, r, "a.txt", strings.Replace(b.String(), "row 20\n", "edited 20\n", 1))
+	m.afterEdit(editedMsg{rel: "a.txt", line: 20})
+	if v := m.View(); !strings.Contains(v, "  20 │ edited 20") || m.reading.rows[m.reading.off].src != 19 {
+		t.Fatalf("reader should reload at line 20:\n%s", v)
+	}
+}
+
 // TestZoomFollowsFocus: leaving a zoomed reader unzooms, coming back rezooms.
 func TestZoomFollowsFocus(t *testing.T) {
 	m := newModel(t.TempDir(), false, "none")

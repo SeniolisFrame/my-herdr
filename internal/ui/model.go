@@ -173,6 +173,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case focusMsg:
 		return m, m.onFocus(msg)
+	case editedMsg:
+		return m, m.afterEdit(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.clamp()

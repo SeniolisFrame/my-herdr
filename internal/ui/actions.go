@@ -278,6 +278,7 @@ var helpText = []string{
 	"  enter   open folder / read file (pane zooms, esc closes)",
 	"  /       search all files; in a file: / search, n / N next / prev",
 	"  in a file: b blame (who changed each line), L file history",
+	"  in a file: e edit here ($EDITOR, else nano / vim)",
 	"Changes pane",
 	"  space   stage / unstage file (on its header) or hunk (inside it)",
 	"  S / U   stage / unstage all",
