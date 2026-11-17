@@ -156,6 +156,17 @@ func TestHunkStage(t *testing.T) {
 	if msg != "staged hunk" || !strings.Contains(cached, "+second") || strings.Contains(cached, "+first") {
 		t.Fatalf("want only the second hunk staged (%s):\n%s", msg, cached)
 	}
+	files, err := loadDiffs(r)
+	must(t, err)
+	var marks []string
+	for _, l := range files[0].lines {
+		if l.kind == '@' {
+			marks = append(marks, l.staged)
+		}
+	}
+	if fmt.Sprint(marks) != "[ full]" {
+		t.Fatalf("hunk marks: want [ full], got %q", marks)
+	}
 	msg, err = gitToggleHunk(r, "a.txt", 1)
 	must(t, err)
 	if cached, _ := git(r, "diff", "--cached"); msg != "unstaged hunk" || cached != "" {

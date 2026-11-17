@@ -859,7 +859,7 @@ func (m *model) diffLine(l diffLine) string {
 	gutter := sDim.Render(lineNo(l.oldNo) + " " + lineNo(l.newNo) + " │")
 	switch l.kind {
 	case '@':
-		return "   " + sHunk.Render(text)
+		return " " + stagedMark(l.staged) + sHunk.Render(text)
 	case '+':
 		return "   " + gutter + sAdd.Render("+"+text)
 	case '-':

@@ -147,10 +147,11 @@ func gitErr(out string, err error) error {
 }
 
 type diffLine struct {
-	kind  byte // '+', '-', ' ', '@' hunk header, '\\' "no newline" note
-	text  string
-	oldNo int
-	newNo int
+	kind   byte // '+', '-', ' ', '@' hunk header, '\\' "no newline" note
+	text   string
+	oldNo  int
+	newNo  int
+	staged string // on '@' lines: "full" / "partial" / "" (see markHunks)
 }
 
 type fileDiff struct {
@@ -180,6 +181,9 @@ func loadDiffs(root string) ([]*fileDiff, error) {
 		return nil, fmt.Errorf("git diff: %w", err)
 	}
 	files := parseDiff(out)
+	if out, err := git(root, "diff", "--cached", base, "--no-color", "--no-ext-diff", "-M"); err == nil {
+		markHunks(files, parseDiff(out))
+	}
 
 	if out, err := git(root, "ls-files", "--others", "--exclude-standard", "-z"); err == nil {
 		for _, p := range strings.Split(out, "\x00") {
@@ -189,6 +193,63 @@ func loadDiffs(root string) ([]*fileDiff, error) {
 		}
 	}
 	return files, nil
+}
+
+// markHunks marks each HEAD→worktree hunk "full" when the index (cached
+// diff) holds all of its changes, "partial" when it holds some.
+func markHunks(files, cached []*fileDiff) {
+	in := map[string]bool{}
+	for _, c := range cached {
+		for _, keys := range changeKeys(c) {
+			for _, k := range keys {
+				in[c.path+"\x00"+k] = true
+			}
+		}
+	}
+	for _, f := range files {
+		h := 0
+		keys := changeKeys(f)
+		for i := range f.lines {
+			if f.lines[i].kind != '@' {
+				continue
+			}
+			n := 0
+			for _, k := range keys[h] {
+				if in[f.path+"\x00"+k] {
+					n++
+				}
+			}
+			switch {
+			case n > 0 && n == len(keys[h]):
+				f.lines[i].staged = "full"
+			case n > 0:
+				f.lines[i].staged = "partial"
+			}
+			h++
+		}
+	}
+}
+
+// changeKeys lists each hunk's changed lines as "HEAD line:kind:text"; both
+// diffs count lines from HEAD, so a staged change has the same key in each.
+func changeKeys(f *fileDiff) [][]string {
+	var out [][]string
+	old := 0
+	for _, l := range f.lines {
+		switch l.kind {
+		case '@':
+			old, _ = parseHunkHeader(l.text)
+			out = append(out, nil)
+		case ' ':
+			old++
+		case '-', '+':
+			out[len(out)-1] = append(out[len(out)-1], fmt.Sprintf("%d:%c:%s", old, l.kind, l.text))
+			if l.kind == '-' {
+				old++
+			}
+		}
+	}
+	return out
 }
 
 const maxUntrackedBytes = 512 << 10
