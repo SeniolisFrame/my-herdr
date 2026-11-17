@@ -58,9 +58,12 @@ func watchFocus() tea.Cmd {
 
 // onFocus unzooms when focus left the zoomed pane and zooms back on return.
 func (m *model) onFocus(f focusMsg) tea.Cmd {
-	if m.reading == nil && !(m.mode == modePick && m.view == viewFiles) || !f.ok {
+	if m.reading == nil && !(m.mode == modePick && m.view == viewFiles) {
 		m.watching, m.zoomedOut = false, false
 		return nil
+	}
+	if !f.ok { // herdr hiccup: skip this round, keep watching
+		return watchFocus()
 	}
 	var cmd tea.Cmd
 	switch {
@@ -71,7 +74,8 @@ func (m *model) onFocus(f focusMsg) tea.Cmd {
 		m.zoomedOut = false
 		cmd = func() tea.Msg { herdr.Zoom(true); return nil }
 	}
-	return tea.Batch(cmd, watchFocus())
+	// Sequence: the next check waits for UnzoomTo, which briefly focuses this pane.
+	return tea.Sequence(cmd, watchFocus())
 }
 
 // focusChat (esc): the chat is right of Files and left of Changes.

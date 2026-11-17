@@ -22,7 +22,7 @@ func drain(m *model, cmd tea.Cmd) {
 		for _, c := range msg {
 			drain(m, c)
 		}
-	case tickMsg, nil:
+	case tickMsg, focusMsg, nil:
 	default:
 		_, next := m.Update(msg)
 		drain(m, next)
@@ -281,7 +281,7 @@ func TestChangesPathCut(t *testing.T) {
 // TestZoomFollowsFocus: leaving a zoomed reader unzooms, coming back rezooms.
 func TestZoomFollowsFocus(t *testing.T) {
 	m := newModel(t.TempDir(), false, "none")
-	m.reading = &reader{}
+	m.reading, m.watching = &reader{}, true
 	m.onFocus(focusMsg{self: false, focused: "chat", ok: true})
 	if !m.zoomedOut {
 		t.Fatal("focus moved away: should unzoom")
@@ -289,6 +289,9 @@ func TestZoomFollowsFocus(t *testing.T) {
 	m.onFocus(focusMsg{self: true, ok: true})
 	if m.zoomedOut {
 		t.Fatal("focus came back: should zoom again")
+	}
+	if m.onFocus(focusMsg{ok: false}) == nil || !m.watching {
+		t.Fatal("a failed herdr call must not stop watching")
 	}
 	m.reading = nil
 	if m.onFocus(focusMsg{self: true, ok: true}); m.watching {
